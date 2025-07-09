@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import mysql.connector
 
 conexao = mysql.connector.connect(
@@ -16,11 +15,10 @@ for tabela in cursor:
 
 cursor.close()
 conexao.close()
-=======
+
 import tkinter as tk
 from tkinter import messagebox
 import bcrypt
-from bd import conectar
 
 from bd import conectar
 

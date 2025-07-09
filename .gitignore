@@ -13,3 +13,6 @@ __pycache__/
 
 # Banco gerado local (se houver)
 *.db
+
+# Dados sensíveis
+*.env
