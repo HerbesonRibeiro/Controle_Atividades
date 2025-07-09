@@ -1,0 +1,15 @@
+# Cache do Python
+__pycache__/
+*.py[cod]
+
+# Ambiente virtual
+.venv/
+
+# Arquivos de log
+*.log
+
+# Arquivos da IDE PyCharm
+.idea/
+
+# Banco gerado local (se houver)
+*.db
