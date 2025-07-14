@@ -22,8 +22,10 @@ class AuthController:
             # 1. Busca usuário no banco
             db = Database().get_cursor()
             db.execute("""
-                SELECT * FROM colaboradores 
-                WHERE usuario = %s AND status = 'Ativo'
+                SELECT c.*, p.nome AS perfil_nome
+                FROM colaboradores c
+                JOIN perfis p ON c.perfil_id = p.id
+                WHERE c.usuario = %s AND c.status = 'Ativo'
             """, (usuario,))
 
             dados = db.fetchone()

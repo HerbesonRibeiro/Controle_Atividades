@@ -23,6 +23,7 @@ class Colaborador:
     status: Status
     setor_id: int
     perfil_id: int = 1
+    perfil_nome: str = "Colaborador"
     data_cadastro: datetime = None
 
     @classmethod
@@ -37,5 +38,6 @@ class Colaborador:
             status=Status(db_data['status']),
             setor_id=db_data['setor_id'],
             perfil_id=db_data['perfil_id'],
+            perfil_nome=db_data.get('perfil_nome', 'Colaborador'),
             data_cadastro=db_data['data_cadastro']
         )

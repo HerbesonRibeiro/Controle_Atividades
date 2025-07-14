@@ -134,7 +134,7 @@ class LoginView:
     def _abrir_dashboard(self, colaborador):
         """Fecha o login e abre a tela principal"""
         self.master.destroy()
-        from screens.home import HomeView
+        from screens.home_view import HomeView
         root = tk.Tk()
         HomeView(root, colaborador)
         root.mainloop()
