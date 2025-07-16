@@ -42,6 +42,10 @@ class HistoricoAtividadesView:
                        background=[('selected', '#e6f3ff')],
                        foreground=[('selected', 'black')])
 
+        self.style.layout("Treeview", [
+            ("Treeview.treearea", {"sticky": "nswe"})
+        ])
+
     def _setup_ui(self):
         tk.Label(self.frame,
                  text="Histórico de Atividades",
@@ -266,21 +270,25 @@ class HistoricoAtividadesView:
             self.selecionados.clear()
 
             # Insere resultados
-            for row in resultados:
+            self.tree.tag_configure('linha_par', background='#ffffff')
+            self.tree.tag_configure('linha_impar', background='#f2f2f2')
+
+            for index, row in enumerate(resultados):
                 iid = str(row['id'])
                 data_br = row['data_atendimento'].strftime('%d-%m-%Y')
                 marcado = "☑" if iid in self.selecionados else "◻"
-                tags = ('selecionado',) if iid in self.selecionados else ()
+                tag_linha = 'linha_par' if index % 2 == 0 else 'linha_impar'
+
                 self.tree.insert('', 'end', iid=iid, values=(
                     marcado,
-                    data_br,
-                    row['tipo_atendimento'],
-                    row['nivel_complexidade'],
-                    row['numero_atendimento'],
-                    row['descricao'],
-                    row['colaborador_nome'],
-                    row['nome_setor']
-                ), tags=tags)
+                    data_br.upper(),
+                    str(row['tipo_atendimento']).upper(),
+                    str(row['nivel_complexidade']).upper(),
+                    str(row['numero_atendimento']).upper(),
+                    str(row['descricao']).upper(),
+                    str(row['colaborador_nome']).upper(),
+                    str(row['nome_setor']).upper()
+                ), tags=(tag_linha,))
 
         except Exception as e:
             logging.error(f"Erro ao carregar atividades: {e}", exc_info=True)

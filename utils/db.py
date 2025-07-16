@@ -2,7 +2,6 @@
 import mysql.connector
 from mysql.connector import Error, errorcode
 import os
-from dotenv import load_dotenv
 import time
 import logging
 
