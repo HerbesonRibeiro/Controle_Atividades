@@ -1,7 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import logging
+import json
+import os
 from controllers.auth_controller import AuthController
+
+CAMINHO_USUARIO_SALVO = "ultimo_usuario.json"
 
 class LoginView:
     def __init__(self, master):
@@ -9,12 +13,13 @@ class LoginView:
         self.controller = AuthController()
 
         self.master.title("Controle de Atividades")
-        self.master.geometry("380x320")
+        self.master.geometry("380x340")
         self.master.resizable(False, False)
         self.master.configure(bg='#f8f9fa')
         self.master.eval('tk::PlaceWindow . center')
 
         self._setup_ui()
+        self._carregar_usuario_salvo()
 
     def _setup_ui(self):
         self.main_frame = tk.Frame(self.master, bg='#f8f9fa', padx=30, pady=20)
@@ -27,12 +32,18 @@ class LoginView:
             tk.Label(self.main_frame, text="Controle de Atividades",
                      font=('Segoe UI', 16, 'bold'), bg='#f8f9fa', fg='#343a40').pack(pady=(0, 20))
 
+        # Campo usuário
         tk.Label(self.main_frame, text="Usuário", bg='#f8f9fa', fg='#495057',
                  font=('Segoe UI', 10, 'bold')).pack(anchor='w')
         self.ent_usuario = tk.Entry(self.main_frame, font=('Segoe UI', 10), bd=1, relief='solid')
-        self.ent_usuario.pack(fill='x', pady=(0, 15), ipady=5)
-        self.ent_usuario.focus()
+        self.ent_usuario.pack(fill='x', pady=(0, 10), ipady=5)
 
+        # Checkbutton para lembrar usuário
+        self.var_lembrar = tk.BooleanVar()
+        tk.Checkbutton(self.main_frame, text="Lembrar usuário", variable=self.var_lembrar,
+                       bg='#f8f9fa', font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 10))
+
+        # Campo senha
         tk.Label(self.main_frame, text="Senha", bg='#f8f9fa', fg='#495057',
                  font=('Segoe UI', 10, 'bold')).pack(anchor='w')
         senha_frame = tk.Frame(self.main_frame, bg='#f8f9fa')
@@ -47,6 +58,7 @@ class LoginView:
         )
         self.btn_show_pwd.pack(side='right', padx=(5, 0))
 
+        # Botão login
         self.btn_login = tk.Button(
             self.main_frame,
             text="Entrar",
@@ -65,12 +77,35 @@ class LoginView:
 
         self.master.bind_all('<Return>', self._login_handler)
 
+    def _carregar_usuario_salvo(self):
+        if os.path.exists(CAMINHO_USUARIO_SALVO):
+            try:
+                with open(CAMINHO_USUARIO_SALVO, 'r') as f:
+                    dados = json.load(f)
+                    usuario = dados.get("usuario")
+                    if usuario:
+                        self.ent_usuario.insert(0, usuario)
+                        self.var_lembrar.set(True)
+            except Exception as e:
+                logging.warning(f"Erro ao carregar último usuário salvo: {e}")
+
+    def _salvar_usuario(self):
+        if self.var_lembrar.get():
+            try:
+                with open(CAMINHO_USUARIO_SALVO, 'w') as f:
+                    json.dump({"usuario": self.ent_usuario.get().strip()}, f)
+            except Exception as e:
+                logging.warning(f"Erro ao salvar usuário: {e}")
+        else:
+            if os.path.exists(CAMINHO_USUARIO_SALVO):
+                os.remove(CAMINHO_USUARIO_SALVO)
+
     def _login_handler(self, event):
         try:
             if self.master.winfo_exists():
                 self._on_login()
         except:
-            pass  # Evita erro se janela já estiver destruída
+            pass
 
     def _toggle_password(self):
         if self.ent_senha.cget('show') == '•':
@@ -93,7 +128,8 @@ class LoginView:
             self.master.update()
 
             colaborador = self.controller.autenticar(usuario, senha)
-            self.master.unbind_all('<Return>')  # Desvincula para evitar erro ao fechar
+            self._salvar_usuario()
+            self.master.unbind_all('<Return>')
             self._abrir_dashboard(colaborador)
 
         except ValueError as e:

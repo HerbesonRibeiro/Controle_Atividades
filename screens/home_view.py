@@ -81,6 +81,8 @@ class HomeView:
         if self.colaborador.cargo.name == "ADMINISTRADOR":
             self._criar_secao_menu("GESTÃO", [
             ("👤 Gerenciar Usuário", self._abrir_gerenciar_usuário),
+            ("👨‍💼 Gerenciar Setores", self._abrir_gerenciar_setores),
+            ("🧩 Gerenciar Tipos de Atividade", self._abrir_gerenciar_atividades),
             ])
 
         # Tela inicial
@@ -120,6 +122,16 @@ class HomeView:
         self._limpar_conteudo()
         from screens.perfil_view import PerfilView
         PerfilView(self.frame_conteudo, self.colaborador)
+
+    def _abrir_gerenciar_setores(self):
+        self._limpar_conteudo()
+        from screens.cadastro_setor_view import CadastroSetorView
+        CadastroSetorView(self.frame_conteudo)
+
+    def _abrir_gerenciar_atividades(self):
+        self._limpar_conteudo()
+        from screens.cadastro_tipo_atividades import CadastroAtividadesView
+        CadastroAtividadesView(self.frame_conteudo)
 
     def _logout(self):
         self.master.destroy()
