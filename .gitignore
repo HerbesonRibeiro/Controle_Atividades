@@ -4,6 +4,7 @@ __pycache__/
 
 # Ambiente virtual
 .venv/
+.venv310
 
 # Arquivos de log
 *.log
@@ -16,3 +17,8 @@ __pycache__/
 
 # Dados sensíveis
 *.env
+
+ultimo.usuario.json
+/dist/
+/build/
+/pyu-data/
