@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 def resource_path(relative_path):
     """Retorna o caminho absoluto do recurso, adaptado ao modo .exe do PyInstaller."""
     try:
-        base_path = sys._MEIPASS  # pasta temporária usada pelo PyInstaller
+        base_path = sys._MEIPASS  # usado no executável
     except AttributeError:
-        base_path = os.path.abspath(".")  # modo desenvolvimento
+        base_path = os.path.abspath(".")  # usado em modo desenvolvimento
     return os.path.join(base_path, relative_path)
 
 # Carrega e descriptografa variáveis do .env
@@ -61,14 +61,15 @@ def main():
     if check_updates():
         python = sys.executable
         os.execl(python, python, *sys.argv)
+
     try:
         root = tk.Tk()
         root.geometry("400x300")
         root.title("Controle de Atividades")
         try:
             root.iconbitmap(resource_path("assets/icon.ico"))
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao definir ícone: {e}")
         LoginView(root)
         root.mainloop()
     except Exception as e:

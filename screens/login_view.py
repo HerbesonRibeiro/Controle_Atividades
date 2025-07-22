@@ -25,12 +25,10 @@ class LoginView:
         self.main_frame = tk.Frame(self.master, bg='#f8f9fa', padx=30, pady=20)
         self.main_frame.pack(expand=True, fill='both')
 
-        try:
-            self.logo = tk.PhotoImage(file="assets/logo.vermelha.png").subsample(2, 2)
-            tk.Label(self.main_frame, image=self.logo, bg='#f8f9fa').pack(pady=(0, 20))
-        except:
-            tk.Label(self.main_frame, text="Controle de Atividades",
-                     font=('Segoe UI', 16, 'bold'), bg='#f8f9fa', fg='#343a40').pack(pady=(0, 20))
+        # Removida a parte que carrega a imagem
+        # Agora só título em texto
+        tk.Label(self.main_frame, text="Controle de Atividades",
+                 font=('Segoe UI', 16, 'bold'), bg='#f8f9fa', fg='#343a40').pack(pady=(0, 20))
 
         # Campo usuário
         tk.Label(self.main_frame, text="Usuário", bg='#f8f9fa', fg='#495057',
@@ -145,8 +143,23 @@ class LoginView:
                 self.master.config(cursor="")
 
     def _abrir_dashboard(self, colaborador):
-        self.master.destroy()
         from screens.home_view import HomeView
+
+        # Reseta o cursor antes de destruir a janela
+        self.master.config(cursor="")
+
+        # Destroi a janela atual (login)
+        self.master.destroy()
+
+        # Cria nova janela principal como Toplevel
         root = tk.Tk()
+        root.title("Controle de Atividades")
+
+        try:
+            root.iconbitmap("assets/icon.ico")
+        except Exception as e:
+            logging.warning(f"Erro ao definir ícone: {e}")
+
         HomeView(root, colaborador)
         root.mainloop()
+
