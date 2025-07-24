@@ -47,8 +47,12 @@ class GitHubUpdater:
                 'notes': release.get('body', ''),
                 'assets': release.get('assets', [])
             }
-        except requests.exceptions.RequestException as e:
-            return {'available': False, 'error': str(e)}
+        except Exception as e:
+            return {
+                'available': False,
+                'error': str(e),  # Garante que o erro será retornado como string
+                'version': self.current_version
+            }
 
     def download_asset(self, asset_url: str) -> str:
         """Baixa o asset com tratamento de erros"""

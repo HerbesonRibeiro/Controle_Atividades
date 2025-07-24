@@ -1,23 +1,31 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
+
+import self
 from tkcalendar import Calendar
 from utils.db import Database
 import logging
 import re
+
 
 class RegistroAtividadeView:
     def __init__(self, master, colaborador):
         self.master = master
         self.colaborador = colaborador
         self.db = Database()
+        self.todos_tipos = {}
         self.tipos_atendimento = {}
+        self.search_thread = None
+        self.search_active = False
+        self._after_id = None
 
         self._configurar_estilos()
         self._setup_ui()
         self._carregar_tipos_atendimento()
         self._configurar_atalhos()
-        # self._centralizar_janela() #Apenas se for usar uma Janela
+        self.combo_tipo.bind('<Escape>', self._limpar_busca)
+        self.last_search_time = 0
 
     def _configurar_estilos(self):
         style = ttk.Style()
@@ -34,6 +42,9 @@ class RegistroAtividadeView:
         style.configure("Calendar.TButton", background="#dee2e6", foreground="#343a40",
                         font=("Segoe UI", 9), padding=5, relief="flat")
         style.map("Calendar.TButton", background=[("active", "#ced4da")])
+        style.configure("Flutuante.TButton", background="#6c757d", foreground="white",
+                        font=("Segoe UI", 10, "bold"), padding=6)
+        style.map("Flutuante.TButton", background=[("active", "#5a6268")])
 
     def _centralizar_janela(self):
         self.master.update_idletasks()
@@ -51,14 +62,82 @@ class RegistroAtividadeView:
         try:
             with self.db.get_cursor() as cursor:
                 cursor.execute("SELECT id, nome FROM tipos_atendimento ORDER BY nome")
-                self.tipos_atendimento = {row["nome"]: row["id"] for row in cursor.fetchall() or []}
-                if hasattr(self, "combo_tipo"):
-                    self.combo_tipo["values"] = list(self.tipos_atendimento.keys())
-                    if self.tipos_atendimento:
-                        self.var_tipo.set(next(iter(self.tipos_atendimento)))
+                tipos = cursor.fetchall()
+
+                self.todos_tipos = {row['nome']: row['id'] for row in tipos}
+
+                if hasattr(self, 'combo_tipo'):
+                    self.combo_tipo['values'] = list(self.todos_tipos.keys())
+                    self.combo_tipo.set("Digite para buscar...")
+
         except Exception as e:
-            logging.error(f"Erro ao carregar tipos: {str(e)}", exc_info=True)
-            messagebox.showwarning("Aviso", "Erro ao carregar tipos de atendimento.")
+            print(f"ERRO no carregamento: {e}")
+            self.todos_tipos = {
+                "Consulta Médica": 1,
+                "Exame Laboratorial": 2,
+                "Atendimento Emergencial": 3
+            }
+            if hasattr(self, 'combo_tipo'):
+                self.combo_tipo['values'] = list(self.todos_tipos.keys())
+
+    def _on_combo_focus(self, event=None):
+        """Limpa o placeholder ao receber foco"""
+        if self.combo_tipo.get() == "Digite para buscar...":
+            self.combo_tipo.set('')
+            self.combo_tipo['values'] = list(self.todos_tipos.keys())
+
+    def _filtrar_tipos_debounce(self, event):
+        """Filtro com debounce para melhor performance"""
+        # Ignora se estiver com o placeholder
+        current_text = self.combo_tipo.get()
+        if current_text == "Digite para buscar...":
+            return
+
+        # Ignora teclas de navegação
+        if event.keysym in ('Return', 'Up', 'Down', 'Left', 'Right', 'Escape', 'Tab'):
+            return
+
+        # Cancela o filtro anterior se existir (com tratamento robusto)
+        if hasattr(self, '_after_id') and self._after_id:
+            try:
+                self.master.after_cancel(self._after_id)
+            except (ValueError, tk.TclError):
+                # Se o ID for inválido (já cancelado ou executado)
+                pass
+            finally:
+                self._after_id = None
+
+        # Agenda o novo filtro
+        self._after_id = self.master.after(300, self._executar_filtro)
+
+    def _executar_filtro(self):
+        """Executa o filtro após o debounce"""
+        # Limpa o ID após execução
+        self._after_id = None
+
+        texto = self.combo_tipo.get()
+
+        # Se texto vazio, mostra todos
+        if not texto:
+            self.combo_tipo['values'] = list(self.todos_tipos.keys())
+            return
+
+        # Filtro case-insensitive
+        texto_lower = texto.lower()
+        valores_filtrados = [
+                                item for item in self.todos_tipos.keys()
+                                if texto_lower in item.lower()
+                            ][:50]  # Limita a 50 resultados
+
+        # Mantém o texto digitado e atualiza a lista
+        current_position = self.combo_tipo.index(tk.INSERT)
+        self.combo_tipo['values'] = valores_filtrados
+        self.combo_tipo.set(texto)
+        self.combo_tipo.icursor(current_position)
+
+        # Abre a lista se houver resultados
+        if valores_filtrados:
+            self.combo_tipo.event_generate('<Down>')
 
     def _abrir_calendario(self):
         top = tk.Toplevel(self.master)
@@ -87,6 +166,7 @@ class RegistroAtividadeView:
         main_frame = ttk.Frame(self.master, padding=(20, 15))
         main_frame.pack(expand=True, fill="both")
 
+        # Componentes básicos
         ttk.Label(main_frame, text="Registro de Atividades", style="Title.TLabel").grid(
             row=0, column=0, columnspan=2, pady=(0, 10))
 
@@ -99,54 +179,93 @@ class RegistroAtividadeView:
         self.status_circle = self.status_indicator.create_oval(2, 2, 14, 14, fill="gray")
         ttk.Label(status_frame, text="Preencha os campos obrigatórios").pack(side="left")
 
+        # Configuração dos campos
         campos = [
             ("Data de Atendimento:", "entry_data", datetime.today().strftime("%d/%m/%Y")),
-            ("Tipo de Atendimento:", "combo_tipo", list(self.tipos_atendimento.keys())),
+            ("Tipo de Atendimento:", "combo_tipo", []),
             ("Nível de Complexidade:", "combo_nivel", ["baixo", "medio", "grave", "gravissimo"]),
             ("Número/Ticket:", "entry_ticket", ""),
+            ("Status:","combo_status", ["RESOLVIDO", "FECHADO", "ENCAMINHADO", "PENDENTE"]),
             ("Descrição:", "txt_descricao", "")
         ]
 
         for row, (label, var_name, default) in enumerate(campos, start=2):
             ttk.Label(main_frame, text=label).grid(row=row, column=0, sticky="e", pady=4, padx=5)
 
-            if "combo" in var_name:
-                var = tk.StringVar()
-                setattr(self, f"var_{var_name.split('_')[1]}", var)
-                combo = ttk.Combobox(main_frame, textvariable=var, values=default, state="readonly")
-                combo.grid(row=row, column=1, pady=4, sticky="we")
-                setattr(self, var_name, combo)
-                var.set(default[0] if default else "")
+            if var_name == "combo_tipo":
+                self.var_tipo = tk.StringVar()
+                self.combo_tipo = ttk.Combobox(
+                    main_frame,
+                    textvariable=self.var_tipo,
+                    state="normal",
+                    width=40,
+                    font=("Segoe UI", 10)
+                )
+                self.combo_tipo.grid(row=row, column=1, pady=4, sticky="we", padx=5)
+                self.combo_tipo.set("Digite para buscar...")
+
+            elif var_name == "combo_nivel":
+                self.var_nivel = tk.StringVar()
+                self.combo_nivel = ttk.Combobox(main_frame, textvariable=self.var_nivel,
+                                                values=default, state="readonly")
+                self.combo_nivel.grid(row=row, column=1, pady=4, sticky="we")
+                self.combo_nivel.current(0)
 
             elif var_name == "entry_data":
                 frame = ttk.Frame(main_frame)
                 frame.grid(row=row, column=1, sticky="we")
-                entry = ttk.Entry(frame, width=15)
-                entry.insert(0, default)
-                entry.pack(side="left")
-                setattr(self, var_name, entry)
+                self.entry_data = ttk.Entry(frame, width=15)
+                self.entry_data.insert(0, default)
+                self.entry_data.pack(side="left")
                 ttk.Button(frame, text="🗓️ Escolher", command=self._abrir_calendario,
                            style="Calendar.TButton").pack(side="left", padx=8)
 
             elif var_name == "entry_ticket":
-                entry = ttk.Entry(main_frame)
-                entry.grid(row=row, column=1, sticky="we")
-                setattr(self, var_name, entry)
+                self.entry_ticket = ttk.Entry(main_frame)
+                self.entry_ticket.grid(row=row, column=1, sticky="we")
 
             elif var_name == "txt_descricao":
-                text = tk.Text(main_frame, height=4, width=40, wrap="word")
-                text.grid(row=row, column=1, pady=4, sticky="we")
-                setattr(self, var_name, text)
+                self.txt_descricao = tk.Text(main_frame, height=4, width=40, wrap="word")
+                self.txt_descricao.grid(row=row, column=1, pady=4, sticky="we")
 
+            elif var_name == "combo_status":
+                self.var_status = tk.StringVar(value="RESOLVIDO")  # Valor padrão
+                self.combo_status = ttk.Combobox(
+                    main_frame,
+                    textvariable=self.var_status,
+                    values=default,
+                    state="readonly"
+                )
+                self.combo_status.grid(row=row, column=1, pady=4, sticky="we")
+
+        # Botões e configuração final
         btn_frame = ttk.Frame(main_frame)
         btn_frame.grid(row=8, column=0, columnspan=2, pady=15)
 
         self.btn_salvar = ttk.Button(btn_frame, text="Salvar (Ctrl+Enter)",
                                      command=self._salvar, style="Primary.TButton")
         self.btn_salvar.pack(side="left", padx=5)
-
+        # Botão de tela flutuante
         ttk.Button(btn_frame, text="Limpar", command=self._limpar_formulario).pack(side="left", padx=5)
         main_frame.columnconfigure(1, weight=1, minsize=250)
+
+        btn_flutuante = ttk.Button(
+            btn_frame,
+            text="Abrir em Janela Flutuante",
+            command=self._abrir_flutuante,
+            style="Flutuante.TButton"
+        )
+        btn_flutuante.pack(side=tk.LEFT, padx=5)
+
+        # Configura os bindings após criar todos os componentes
+        self._configurar_bindings()
+
+    def _configurar_bindings(self):
+        """Configura todos os eventos do combobox"""
+        self.combo_tipo.bind('<KeyRelease>', self._filtrar_tipos_debounce)
+        self.combo_tipo.bind('<FocusIn>', self._on_combo_focus)
+        self.combo_tipo.bind('<Escape>', self._limpar_busca)
+        self.combo_tipo.bind('<<ComboboxSelected>>', self._tipo_selecionado)
 
     def _atualizar_status(self, estado):
         cores = {
@@ -160,18 +279,29 @@ class RegistroAtividadeView:
     def _validar_dados(self):
         erros = []
         data = self.entry_data.get()
-        if not re.match(r"\d{2}/\d{2}/\d{4}", data):
-            erros.append("Data inválida (DD/MM/AAAA)")
+
+        # Validação da data
+        if not re.match(r"^\d{2}/\d{2}/\d{4}$", data):
+            erros.append("Formato de data inválido (DD/MM/AAAA)")
         else:
             try:
                 datetime.strptime(data, "%d/%m/%Y")
             except ValueError:
-                erros.append("Data inválida")
+                erros.append("Data inválida ou inexistente")
 
-        if not self.var_tipo.get():
+        # Validação do tipo de atendimento
+        tipo = self.var_tipo.get()
+        if not tipo or tipo == "Digite para buscar...":
             erros.append("Tipo de atendimento obrigatório")
-        if not self.txt_descricao.get("1.0", "end-1c").strip():
+        elif tipo not in self.todos_tipos:
+            erros.append("Selecione um tipo de atendimento válido da lista")
+
+        # Validação da descrição
+        descricao = self.txt_descricao.get("1.0", "end-1c").strip()
+        if not descricao:
             erros.append("Descrição obrigatória")
+        elif len(descricao) < 10:
+            erros.append("Descrição muito curta (mínimo 10 caracteres)")
 
         return erros
 
@@ -189,22 +319,24 @@ class RegistroAtividadeView:
             dados = {
                 "colaborador_id": self.colaborador.id,
                 "data_atendimento": data_db,
-                "tipo_atendimento_id": self.tipos_atendimento[self.var_tipo.get()],
-                "nivel_complexidade": self.var_nivel.get(),
+                "tipo_atendimento_id": self.todos_tipos[self.var_tipo.get()],
+                "nivel_complexidade": self.var_nivel.get().upper(),
                 "numero_atendimento": self.entry_ticket.get().strip() or None,
-                "descricao": self.txt_descricao.get("1.0", "end-1c").strip()
+                "descricao": self.txt_descricao.get("1.0", "end-1c").strip(),
+                "status": self.var_status.get().strip().upper()
             }
 
             with self.db.get_cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO atividades (
                         colaborador_id, data_atendimento, tipo_atendimento_id,
-                        nivel_complexidade, numero_atendimento, descricao
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                        nivel_complexidade, numero_atendimento, descricao,
+                        status
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, tuple(dados.values()))
                 self.db.conn.commit()
 
-            messagebox.showinfo("Sucesso", "Registro salvo com sucesso!")
+            messagebox.showinfo("Sucesso", "Registro salvo com sucesso!", parent=self.master)
             self._limpar_formulario()
             self._atualizar_status("sucesso")
 
@@ -219,15 +351,97 @@ class RegistroAtividadeView:
         except Exception as e:
             self._atualizar_status("erro")
             logging.error(f"Erro ao salvar: {e}", exc_info=True)
-            messagebox.showerror("Erro", "Erro ao salvar no banco de dados.")
+            messagebox.showerror("Erro", f"Erro ao salvar no banco de dados.\n{str(e)}")
             self.btn_salvar.config(state=tk.NORMAL, text="Salvar (Ctrl+Enter)")
 
     def _limpar_formulario(self):
         self.entry_data.delete(0, tk.END)
         self.entry_data.insert(0, datetime.today().strftime('%d/%m/%Y'))
-        if self.tipos_atendimento:
-            self.var_tipo.set(next(iter(self.tipos_atendimento)))
+        self.combo_tipo.set('')
+        self.combo_tipo.insert(0, "Digite para buscar...")
         self.var_nivel.set("baixo")
         self.entry_ticket.delete(0, tk.END)
         self.txt_descricao.delete("1.0", tk.END)
         self._atualizar_status("padrao")
+        self.var_status.set("RESOLVIDO")
+
+    def _limpar_busca(self, event=None):
+        """Limpa a busca completamente"""
+        self.combo_tipo.set('')
+        self.combo_tipo['values'] = list(self.todos_tipos.keys())
+        return "break"  # Importante para evitar propagação do evento ESC
+
+    def _tipo_selecionado(self, event):
+        """Validação quando um item é selecionado"""
+        if self.var_tipo.get() not in self.todos_tipos:
+            self.var_tipo.set('')
+        self._atualizar_status("editando")
+
+    def _abrir_flutuante(self):
+        """Abre a janela flutuante de forma confiável"""
+        try:
+            # Captura os dados atuais antes de qualquer operação
+            dados = {
+                'data': self.entry_data.get(),
+                'tipo': self.var_tipo.get(),
+                'nivel': self.var_nivel.get(),
+                'ticket': self.entry_ticket.get().strip(),
+                'descricao': self.txt_descricao.get("1.0", tk.END).strip(),
+                'status': self.var_status.get() if hasattr(self, 'var_status') else None
+            }
+
+            # Obtém a janela raiz corretamente
+            root_window = self.master.winfo_toplevel()
+
+            # Tenta importar a classe flutuante
+            try:
+                from screens.registro_atividade_flutuante_view import RegistroFlutuante
+            except ImportError:
+                try:
+                    from registro_atividade_flutuante_view import RegistroFlutuante
+                except ImportError as e:
+                    messagebox.showerror("Erro", f"Não foi possível carregar a janela flutuante: {str(e)}",
+                                         parent=root_window)
+                    return
+
+            # Cria a janela flutuante ANTES de esconder a principal
+            self.flutuante = RegistroFlutuante(root_window, self.colaborador, dados)
+
+            # Verifica se a janela flutuante foi criada com sucesso
+            if not hasattr(self.flutuante, 'root') or not self.flutuante.root.winfo_exists():
+                messagebox.showerror("Erro", "Falha ao criar a janela flutuante", parent=root_window)
+                return
+
+            # Configura o comportamento ao fechar
+            self.flutuante.root.protocol("WM_DELETE_WINDOW", self._fechar_flutuante)
+
+            # Só esconde a principal depois de confirmar que a flutuante está ok
+            root_window.withdraw()
+
+            # Força o foco na nova janela
+            self.flutuante.root.focus_force()
+            self.flutuante.root.lift()
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            # Garante que a janela principal permaneça visível em caso de erro
+            self.master.winfo_toplevel().deiconify()
+            messagebox.showerror("Erro", f"Falha ao abrir janela flutuante:\n{str(e)}", parent=self.master)
+
+    def _fechar_flutuante(self):
+        """Fecha a janela flutuante e restaura a principal de forma segura"""
+        try:
+            if hasattr(self, 'flutuante'):
+                # Destroi a janela flutuante se existir
+                try:
+                    if self.flutuante.root.winfo_exists():
+                        self.flutuante.root.destroy()
+                except tk.TclError:
+                    pass
+                del self.flutuante
+        finally:
+            # Restaura a janela principal
+            root_window = self.master.winfo_toplevel()
+            root_window.deiconify()
+            root_window.focus_force()
