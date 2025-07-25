@@ -73,9 +73,9 @@ class RegistroAtividadeView:
         except Exception as e:
             print(f"ERRO no carregamento: {e}")
             self.todos_tipos = {
-                "Consulta Médica": 1,
-                "Exame Laboratorial": 2,
-                "Atendimento Emergencial": 3
+                "Teste erro 1": 1,
+                "Texte erro 2": 2,
+                "Text erro 3": 3
             }
             if hasattr(self, 'combo_tipo'):
                 self.combo_tipo['values'] = list(self.todos_tipos.keys())

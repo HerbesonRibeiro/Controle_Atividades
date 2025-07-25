@@ -12,7 +12,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def resource_path(relative_path):
-    """Retorna o caminho absoluto do recurso, adaptado ao modo .exe do PyInstaller."""
     try:
         base_path = sys._MEIPASS  # usado no executável
     except AttributeError:
@@ -36,7 +35,7 @@ def check_updates():
         updater = GitHubUpdater(
             repo_owner="HerbesonRibeiro",
             repo_name="Controle_Atividades",
-            current_version="1.0.0",
+            current_version="1.0.1",
             token=github_token
         )
         update_info = updater.check_for_updates()
@@ -57,6 +56,29 @@ def check_updates():
         logger.debug(f"[Updater] Erro silencioso: {e}")
     return False
 
+# ✅ Classe para controle de inatividade global
+class InactivityManager:
+    def __init__(self, root, timeout_ms=10*60*1000):  # 10 minutos
+        self.root = root
+        self.timeout_ms = timeout_ms
+        self._after_id = None
+        self.root.bind_all("<Motion>", self.reset_timer)
+        self.root.bind_all("<Key>", self.reset_timer)
+        self.start_timer()
+
+    def start_timer(self):
+        self._after_id = self.root.after(self.timeout_ms, self.shutdown)
+
+    def reset_timer(self, event=None):
+        if self._after_id:
+            self.root.after_cancel(self._after_id)
+        self.start_timer()
+
+    def shutdown(self):
+        logger.info("⏳ Encerrando o sistema por inatividade...")
+        self.root.destroy()
+        sys.exit(0)
+
 def main():
     if check_updates():
         python = sys.executable
@@ -70,6 +92,10 @@ def main():
             root.iconbitmap(resource_path("assets/icon.ico"))
         except Exception as e:
             logger.warning(f"⚠️ Erro ao definir ícone: {e}")
+
+        # ✅ Ativa o controle de inatividade global
+        InactivityManager(root)
+
         LoginView(root)
         root.mainloop()
     except Exception as e:

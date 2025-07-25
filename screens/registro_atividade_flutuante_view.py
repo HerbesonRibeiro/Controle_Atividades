@@ -1,21 +1,31 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
+
+import logging
 from tkcalendar import Calendar
+from utils.db import Database
 
 
 class RegistroFlutuante:
     def __init__(self, master, colaborador, dados_iniciais=None):
         """Inicializa a janela flutuante de forma confiável"""
+
         try:
             # Cria a janela Toplevel
             self.root = tk.Toplevel(master)
             self.root.title("Registro Flutuante")
             self.root.minsize(400, 300)  # Tamanho inicial compacto
 
+            # Mantém a janela sempre no topo
+            self.root.attributes('-topmost', True)
+
             # Configurações essenciais
             self.root.transient(master)  # Torna dependente da principal
             self.root.grab_set()  # Modal
+
+            # Conexão com o banco de dados
+            self.db = Database()
 
             # Centraliza a janela
             self._centralizar_janela()
@@ -91,14 +101,26 @@ class RegistroFlutuante:
                   foreground=[('active', 'white'), ('!disabled', 'white')])
 
     def _carregar_tipos_atendimento(self):
-        """Carrega os tipos de atendimento (simplificado)"""
-        self.todos_tipos = {
-            "Consulta Médica": 1,
-            "Exame Laboratorial": 2,
-            "Atendimento Emergencial": 3
-        }
-        if hasattr(self, 'combo_tipo'):
-            self.combo_tipo['values'] = list(self.todos_tipos.keys())
+        try:
+            with self.db.get_cursor() as cursor:
+                cursor.execute("SELECT id, nome FROM tipos_atendimento ORDER BY nome")
+                tipos = cursor.fetchall()
+
+                self.todos_tipos = {row['nome']: row['id'] for row in tipos}
+
+                if hasattr(self, 'combo_tipo'):
+                    self.combo_tipo['values'] = list(self.todos_tipos.keys())
+                    self.combo_tipo.set("Digite para buscar...")
+
+        except Exception as e:
+            print(f"ERRO no carregamento: {e}")
+            self.todos_tipos = {
+                "Teste erro 1": 1,
+                "Teste erro 2": 2,
+                "Test erro 3": 3
+            }
+            if hasattr(self, 'combo_tipo'):
+                self.combo_tipo['values'] = list(self.todos_tipos.keys())
 
     def _setup_ui(self):
         """Configura a interface do usuário"""
@@ -187,18 +209,23 @@ class RegistroFlutuante:
         # Frame para botões
         button_frame = ttk.Frame(parent)
         button_frame.grid(row=len(campos) + 2, column=0, columnspan=2, pady=10, sticky="e")
-        ttk.Button(
+
+        # Alteração aqui: armazene o botão em self.btn_salvar
+        self.btn_salvar = ttk.Button(
             button_frame,
             text="Salvar (Ctrl+Enter)",
             command=self._salvar,
             style="Primary.TButton"
-        ).pack(side="right", padx=5)
-        ttk.Button(
-            button_frame,
-            text="Fechar",
-            command=self._fechar_janela,
-            style="Cancel.TButton"
-        ).pack(side="right", padx=5)
+        )
+        self.btn_salvar.pack(side="right", padx=5)
+
+        # Desabilitado para criar outra função de voltar
+        # ttk.Button(
+        #     button_frame,
+        #     text="Fechar",
+        #     command=self._fechar_janela,
+        #     style="Cancel.TButton"
+        # ).pack(side="right", padx=5)
 
     def _abrir_calendario(self):
         """Abre o calendário para seleção de data"""
@@ -238,16 +265,111 @@ class RegistroFlutuante:
             self.combo_status.set(dados['status'])
 
     def _salvar(self):
-        """Método para salvar os dados"""
-        messagebox.showinfo("Sucesso", "Dados salvos com sucesso!", parent=self.root)
+        try:
+            # Verifica se os componentes existem antes de acessá-los
+            if hasattr(self, 'btn_salvar'):
+                self.btn_salvar.config(state=tk.DISABLED, text="Salvando...")
+
+            if hasattr(self, '_atualizar_status'):
+                self._atualizar_status("editando")
+
+            # Validação dos dados
+            erros = []
+            if not self.var_tipo.get() or self.var_tipo.get() == "Digite para buscar...":
+                erros.append("Selecione um tipo de atendimento")
+            if not self.entry_data.get():
+                erros.append("Informe a data do atendimento")
+
+            if erros:
+                raise ValueError("\n• " + "\n• ".join(erros))
+
+            # Conversão da data
+            try:
+                data_db = datetime.strptime(self.entry_data.get(), "%d/%m/%Y").strftime("%Y-%m-%d")
+            except ValueError:
+                raise ValueError("Data inválida. Use o formato DD/MM/AAAA")
+
+            # Preparação dos dados
+            dados = {
+                "colaborador_id": self.colaborador.id,
+                "data_atendimento": data_db,
+                "tipo_atendimento_id": self.todos_tipos[self.var_tipo.get()],
+                "nivel_complexidade": self.var_nivel.get().upper(),
+                "numero_atendimento": self.entry_ticket.get().strip() or None,
+                "descricao": self.txt_descricao.get("1.0", "end-1c").strip(),
+                "status": self.var_status.get().strip().upper()
+            }
+
+            # Inserção no banco de dados
+            with self.db.get_cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO atividades (
+                        colaborador_id, data_atendimento, tipo_atendimento_id,
+                        nivel_complexidade, numero_atendimento, descricao,
+                        status
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, tuple(dados.values()))
+                self.db.conn.commit()
+
+            # Feedback de sucesso
+            messagebox.showinfo("Sucesso", "Registro salvo com sucesso!", parent=self.root)
+            self._limpar_formulario()
+
+            if hasattr(self, '_atualizar_status'):
+                self._atualizar_status("sucesso")
+
+        except ValueError as ve:
+            if hasattr(self, '_atualizar_status'):
+                self._atualizar_status("erro")
+            messagebox.showerror("Erro de Validação", str(ve), parent=self.root)
+
+        except Exception as e:
+            if hasattr(self, '_atualizar_status'):
+                self._atualizar_status("erro")
+            logging.error(f"Erro ao salvar: {e}", exc_info=True)
+            messagebox.showerror("Erro", f"Erro ao salvar no banco de dados.\n{str(e)}", parent=self.root)
+
+        finally:
+            # Garante que o botão seja reativado mesmo em caso de erro
+            if hasattr(self, 'btn_salvar'):
+                self.btn_salvar.config(state=tk.NORMAL, text="Salvar (Ctrl+Enter)")
 
     def _fechar_janela(self):
-        """Fecha a janela flutuante"""
+        """Fecha a janela flutuante com verificação de dados não salvos"""
+        if self._dados_alterados() and not messagebox.askyesno(
+                "Fechar", "Há dados não salvos. Deseja realmente fechar?",
+                parent=self.root
+        ):
+            return
+
         self.root.destroy()
 
+    def _limpar_formulario(self):
+        self.entry_data.delete(0, tk.END)
+        self.entry_data.insert(0, datetime.today().strftime('%d/%m/%Y'))
+        self.combo_tipo.set('')
+        self.combo_tipo.insert(0, "Digite para buscar...")
+        self.var_nivel.set("baixo")
+        self.entry_ticket.delete(0, tk.END)
+        self.txt_descricao.delete("1.0", tk.END)
+        self._atualizar_status("padrao")
+        self.var_status.set("RESOLVIDO")
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.withdraw()  # Oculta a janela principal
-    app = RegistroFlutuante(root, colaborador="Teste")
-    root.mainloop()
+    def _limpar_busca(self, event=None):
+        """Limpa a busca completamente"""
+        self.combo_tipo.set('')
+        self.combo_tipo['values'] = list(self.todos_tipos.keys())
+        return "break"  # Importante para evitar propagação do evento ESC
+
+    def _atualizar_status(self, estado="padrao"):
+        """Atualiza o indicador visual de status"""
+        cores = {
+            "padrao": "#6c757d",  # Cinza
+            "editando": "#17a2b8",  # Azul claro (em progresso)
+            "sucesso": "#28a745",  # Verde
+            "erro": "#dc3545",  # Vermelho
+        }
+
+        if hasattr(self, 'status_circle'):
+            self.status_indicator.itemconfig(self.status_circle, fill=cores.get(estado, "#6c757d"))
+#
