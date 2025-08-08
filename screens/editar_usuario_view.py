@@ -1,59 +1,59 @@
+# Resivado conexão com BD
 import tkinter as tk
 from tkinter import ttk, messagebox
 from utils.db import Database
 import bcrypt
 import logging
+from mysql.connector import Error, InterfaceError
+
 
 class EditarUsuarioView:
     def __init__(self, master, usuario_id=None, on_save=None):
         self.master = master
         self.usuario_id = usuario_id
         self.on_save = on_save
-        self.db = Database()
         self.dados = None
 
-        self.setores = self._carregar_setores()
-        self.perfis = self._carregar_perfis()
-        self.setor_nomes = [s['nome_setor'] for s in self.setores]
-        self.perfil_nomes = [p['nome'] for p in self.perfis]
-
+        # Configurações iniciais
         self.master.title("Editar Usuário" if usuario_id else "Novo Usuário")
         self.master.geometry("420x540")
-        self.master.configure(bg="#f8f9fa")
+        self.master.resizable(False, False)
 
-        self._carregar_dados()
+        # Carrega dados iniciais
+        self._carregar_dados_iniciais()
         self._setup_ui()
 
-    def _carregar_setores(self):
+    def _carregar_dados_iniciais(self):
+        """Carrega setores e perfis do banco de dados"""
         try:
-            cursor = self.db.get_cursor()
-            cursor.execute("SELECT id, nome_setor FROM setores ORDER BY nome_setor")
-            return cursor.fetchall()
-        except Exception as e:
-            logging.error(f"Erro ao carregar setores: {e}")
-            return []
+            with Database().get_connection() as conn:
+                with conn.cursor(dictionary=True) as cursor:
+                    # Carrega setores
+                    cursor.execute("SELECT id, nome_setor FROM setores ORDER BY nome_setor")
+                    self.setores = cursor.fetchall()
+                    self.setor_nomes = [s['nome_setor'] for s in self.setores]
 
-    def _carregar_perfis(self):
-        try:
-            cursor = self.db.get_cursor()
-            cursor.execute("SELECT id, nome FROM perfis ORDER BY nome")
-            return cursor.fetchall()
-        except Exception as e:
-            logging.error(f"Erro ao carregar perfis: {e}")
-            return []
+                    # Carrega perfis
+                    cursor.execute("SELECT id, nome FROM perfis ORDER BY nome")
+                    self.perfis = cursor.fetchall()
+                    self.perfil_nomes = [p['nome'] for p in self.perfis]
 
-    def _carregar_dados(self):
-        if not self.usuario_id:
-            return
-        try:
-            cursor = self.db.get_cursor()
-            cursor.execute("SELECT * FROM colaboradores WHERE id = %s", (self.usuario_id,))
-            self.dados = cursor.fetchone()
+                    # Carrega dados do usuário se existir
+                    if self.usuario_id:
+                        cursor.execute("SELECT * FROM colaboradores WHERE id = %s", (self.usuario_id,))
+                        self.dados = cursor.fetchone()
+
+        except Error as e:
+            logging.error(f"Erro de banco de dados: {e}", exc_info=True)
+            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
+            self.master.destroy()
         except Exception as e:
-            logging.error(f"Erro ao carregar dados do usuário: {e}", exc_info=True)
-            messagebox.showerror("Erro", "Erro ao carregar dados do usuário.")
+            logging.error(f"Erro ao carregar dados iniciais: {e}", exc_info=True)
+            messagebox.showerror("Erro", f"Erro ao carregar dados:\n{e}")
+            self.master.destroy()
 
     def _get_nome_setor(self):
+        """Retorna o nome do setor do usuário atual"""
         if not self.dados:
             return self.setor_nomes[0] if self.setor_nomes else ""
         for s in self.setores:
@@ -62,6 +62,7 @@ class EditarUsuarioView:
         return ""
 
     def _get_nome_perfil(self):
+        """Retorna o nome do perfil do usuário atual"""
         if not self.dados:
             return self.perfil_nomes[0] if self.perfil_nomes else ""
         for p in self.perfis:
@@ -70,138 +71,187 @@ class EditarUsuarioView:
         return ""
 
     def _setup_ui(self):
+        """Configura a interface do usuário"""
         style = ttk.Style()
-        style.configure("TLabel", font=('Segoe UI', 10), background="#f8f9fa")
-        style.configure("TEntry", font=('Segoe UI', 10))
-        style.configure("TCombobox", font=('Segoe UI', 10))
-        style.configure("TButton", font=('Segoe UI', 10, 'bold'))
+        style.theme_use("clam")
 
-        # 🎨 Scroll container
-        container = tk.Frame(self.master, bg="#f8f9fa")
+        # Configuração de estilos
+        style.configure("TFrame", background="#f8f9fa")
+        style.configure("TLabel",
+                        font=('Segoe UI', 10),
+                        background="#f8f9fa",
+                        padding=2)
+        style.configure("TEntry",
+                        font=('Segoe UI', 10),
+                        padding=5)
+        style.configure("TCombobox",
+                        font=('Segoe UI', 10))
+        style.configure("Primary.TButton",
+                        font=('Segoe UI', 10, 'bold'),
+                        background="#4a6da7",
+                        foreground="white",
+                        padding=6)
+        style.map("Primary.TButton",
+                  background=[("active", "#3a5a8a")])
+
+        # Container principal com scroll
+        container = ttk.Frame(self.master)
         container.pack(fill='both', expand=True)
 
         canvas = tk.Canvas(container, bg="#f8f9fa", highlightthickness=0)
         scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
 
-        scrollbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
 
-        scroll_frame = tk.Frame(canvas, bg="#f8f9fa")
-        canvas.create_window((canvas.winfo_width() // 2, 0), window=scroll_frame, anchor='n')
-        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        # Frame de conteúdo
+        frame = ttk.Frame(scrollable_frame, padding=20)
+        frame.pack(fill='both', expand=True)
 
-        def ajustar_largura(event):
-            canvas.itemconfig(window_id, width=event.width)
-
-        window_id = canvas.create_window((0, 0), window=scroll_frame, anchor='n')
-        canvas.bind('<Configure>', ajustar_largura)
-
-        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-
-        frame = tk.Frame(scroll_frame, bg="#f8f9fa", padx=20, pady=20)
-        frame.pack(anchor="center", expand=True, fill="both")
-
-        # 📋 Variáveis
+        # Variáveis de controle
         self.var_nome = tk.StringVar(value=self.dados['nome'] if self.dados else "")
         self.var_email = tk.StringVar(value=self.dados['email'] if self.dados else "")
         self.var_usuario = tk.StringVar(value=self.dados['usuario'] if self.dados else "")
         self.var_senha = tk.StringVar()
         self.var_cargo = tk.StringVar(value=self.dados['cargo'] if self.dados else "Colaborador")
-        self.var_status = tk.StringVar(value=self.dados['status'] if self.dados else "Ativo")
+        self.var_status = tk.StringVar(value="Ativo" if self.dados and self.dados['status'] else "Inativo")
         self.var_setor_nome = tk.StringVar(value=self._get_nome_setor())
         self.var_perfil_nome = tk.StringVar(value=self._get_nome_perfil())
 
+        # Campos do formulário
         campos = [
             ("👤 Nome", self.var_nome),
             ("📧 E-mail", self.var_email),
             ("👥 Usuário", self.var_usuario),
-            ("🔐 Nova Senha", self.var_senha),
+            ("🔐 Nova Senha", self.var_senha, True)  # Campo de senha
         ]
 
-        for label, var in campos:
-            ttk.Label(frame, text=label).pack(anchor="w", pady=(12, 0))
-            ttk.Entry(frame, textvariable=var).pack(fill="x")
+        for idx, (label, var, *opts) in enumerate(campos):
+            ttk.Label(frame, text=label).grid(row=idx, column=0, sticky="w", pady=(10, 0))
+            if opts and opts[0]:  # Campo de senha
+                ttk.Entry(frame, textvariable=var, show="*").grid(row=idx, column=1, sticky="ew", pady=(10, 0))
+            else:
+                ttk.Entry(frame, textvariable=var).grid(row=idx, column=1, sticky="ew", pady=(10, 0))
 
-        ttk.Separator(frame).pack(fill="x", pady=10)
+        # Separador
+        ttk.Separator(frame).grid(row=len(campos), column=0, columnspan=2, pady=10, sticky="ew")
 
-        ttk.Label(frame, text="📌 Cargo").pack(anchor="w", pady=(10, 0))
-        ttk.Combobox(frame, textvariable=self.var_cargo, values=[
-            "Colaborador", "Administrador", "Coordenador", "Gestor"
-        ], state="readonly").pack(fill="x")
+        # Comboboxes
+        comboboxes = [
+            ("📌 Cargo", self.var_cargo, ["Colaborador", "Administrador", "Coordenador", "Gestor"]),
+            ("⚙️ Status", self.var_status, ["Ativo", "Inativo"]),
+            ("🏢 Setor", self.var_setor_nome, self.setor_nomes),
+            ("🧩 Perfil", self.var_perfil_nome, self.perfil_nomes)
+        ]
 
-        ttk.Label(frame, text="⚙️ Status").pack(anchor="w", pady=(10, 0))
-        ttk.Combobox(frame, textvariable=self.var_status, values=["Ativo", "Inativo"], state="readonly").pack(fill="x")
+        for idx, (label, var, values) in enumerate(comboboxes, start=len(campos) + 1):
+            ttk.Label(frame, text=label).grid(row=idx, column=0, sticky="w", pady=(10, 0))
+            ttk.Combobox(frame, textvariable=var, values=values, state="readonly").grid(
+                row=idx, column=1, sticky="ew", pady=(10, 0))
 
-        ttk.Label(frame, text="🏢 Setor").pack(anchor="w", pady=(10, 0))
-        ttk.Combobox(frame, textvariable=self.var_setor_nome,
-                     values=self.setor_nomes, state="readonly").pack(fill="x")
+        # Botão salvar
+        ttk.Button(frame,
+                   text="💾 Salvar Usuário",
+                   style="Primary.TButton",
+                   command=self._salvar).grid(
+            row=len(campos) + len(comboboxes) + 1,
+            column=0,
+            columnspan=2,
+            pady=20)
 
-        ttk.Label(frame, text="🧩 Perfil").pack(anchor="w", pady=(10, 0))
-        ttk.Combobox(frame, textvariable=self.var_perfil_nome,
-                     values=self.perfil_nomes, state="readonly").pack(fill="x")
-
-        ttk.Separator(frame).pack(fill="x", pady=15)
-        ttk.Button(frame, text="💾 Salvar Usuário", command=self._salvar).pack(pady=(10, 0), ipadx=10, ipady=5)
+        # Configuração das colunas
+        frame.columnconfigure(1, weight=1)
 
     def _salvar(self):
+        """Salva os dados do usuário no banco de dados"""
         try:
+            # Validação dos dados
             nome = self.var_nome.get().strip()
             email = self.var_email.get().strip()
             usuario = self.var_usuario.get().strip()
             senha = self.var_senha.get().strip()
             cargo = self.var_cargo.get()
-            status = self.var_status.get()
+            status = self.var_status.get() == "Ativo"
             setor_nome = self.var_setor_nome.get()
             perfil_nome = self.var_perfil_nome.get()
 
             if not nome or not email or not usuario:
-                messagebox.showwarning("Campos obrigatórios", "Nome, e-mail e usuário são obrigatórios.")
+                messagebox.showwarning("Aviso", "Nome, e-mail e usuário são obrigatórios.")
                 return
 
+            # Obtém IDs dos relacionamentos
             setor_id = next((s['id'] for s in self.setores if s['nome_setor'] == setor_nome), None)
             perfil_id = next((p['id'] for p in self.perfis if p['nome'] == perfil_nome), None)
 
-            if setor_id is None or perfil_id is None:
+            if None in (setor_id, perfil_id):
                 messagebox.showerror("Erro", "Setor ou perfil inválido.")
                 return
 
+            # Para novo usuário, senha é obrigatória
+            if not self.usuario_id and not senha:
+                messagebox.showerror("Erro", "Senha é obrigatória para novo usuário.")
+                return
+
+            # Hash da senha se fornecida
             senha_hash = None
             if senha:
                 senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
 
-            cursor = self.db.get_cursor()
+            with Database().get_connection() as conn:
+                with conn.cursor() as cursor:
+                    if self.usuario_id:
+                        # Atualização de usuário existente
+                        if senha_hash:
+                            cursor.execute("""
+                                UPDATE colaboradores SET 
+                                    nome=%s, email=%s, usuario=%s, senha=%s,
+                                    cargo=%s, status=%s, setor_id=%s, perfil_id=%s
+                                WHERE id=%s
+                            """, (nome, email, usuario, senha_hash, cargo, status, setor_id, perfil_id,
+                                  self.usuario_id))
+                        else:
+                            cursor.execute("""
+                                UPDATE colaboradores SET 
+                                    nome=%s, email=%s, usuario=%s,
+                                    cargo=%s, status=%s, setor_id=%s, perfil_id=%s
+                                WHERE id=%s
+                            """, (nome, email, usuario, cargo, status, setor_id, perfil_id, self.usuario_id))
+                    else:
+                        # Inserção de novo usuário
+                        cursor.execute("""
+                            INSERT INTO colaboradores (
+                                nome, email, usuario, senha, 
+                                cargo, status, setor_id, perfil_id
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (nome, email, usuario, senha_hash, cargo, status, setor_id, perfil_id))
 
-            if self.usuario_id:
-                if senha_hash:
-                    cursor.execute("""
-                        UPDATE colaboradores SET nome=%s, email=%s, usuario=%s, senha=%s,
-                            cargo=%s, status=%s, setor_id=%s, perfil_id=%s
-                        WHERE id=%s
-                    """, (nome, email, usuario, senha_hash, cargo, status, setor_id, perfil_id, self.usuario_id))
-                else:
-                    cursor.execute("""
-                        UPDATE colaboradores SET nome=%s, email=%s, usuario=%s,
-                            cargo=%s, status=%s, setor_id=%s, perfil_id=%s
-                        WHERE id=%s
-                    """, (nome, email, usuario, cargo, status, setor_id, perfil_id, self.usuario_id))
-            else:
-                if not senha_hash:
-                    messagebox.showerror("Erro", "Senha é obrigatória para novo usuário.")
-                    return
+                    conn.commit()
 
-                cursor.execute("""
-                    INSERT INTO colaboradores
-                        (nome, email, usuario, senha, cargo, status, setor_id, perfil_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (nome, email, usuario, senha_hash, cargo, status, setor_id, perfil_id))
-
-            self.db.conn.commit()
             messagebox.showinfo("Sucesso", "Usuário salvo com sucesso!")
             if self.on_save:
                 self.on_save()
             self.master.destroy()
 
+        except Error as e:
+            logging.error(f"Erro de banco de dados: {e}", exc_info=True)
+            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
         except Exception as e:
             logging.error(f"Erro ao salvar usuário: {e}", exc_info=True)
             messagebox.showerror("Erro", f"Falha ao salvar usuário:\n{e}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = EditarUsuarioView(root)
+    root.mainloop()

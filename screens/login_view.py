@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox
 import logging
 import json
 import os
+import sys
 from controllers.auth_controller import AuthController
 
 CAMINHO_USUARIO_SALVO = "ultimo_usuario.json"
@@ -25,8 +26,7 @@ class LoginView:
         self.main_frame = tk.Frame(self.master, bg='#f8f9fa', padx=30, pady=20)
         self.main_frame.pack(expand=True, fill='both')
 
-        # Removida a parte que carrega a imagem
-        # Agora só título em texto
+        # Título - deixei apenas Texto
         tk.Label(self.main_frame, text="Controle de Atividades",
                  font=('Segoe UI', 16, 'bold'), bg='#f8f9fa', fg='#343a40').pack(pady=(0, 20))
 
@@ -122,8 +122,8 @@ class LoginView:
                 raise ValueError("Preencha todos os campos")
 
             self.btn_login.config(state=tk.DISABLED, text="Autenticando...")
-            self.master.config(cursor="wait")
-            self.master.update()
+            self.master.config(cursor="watch")
+            self.master.update_idletasks()
 
             colaborador = self.controller.autenticar(usuario, senha)
             self._salvar_usuario()
@@ -144,22 +144,18 @@ class LoginView:
 
     def _abrir_dashboard(self, colaborador):
         from screens.home_view import HomeView
+        self.main_frame.destroy()  # Limpa o frame de login
 
-        # Reseta o cursor antes de destruir a janela
+        # Configura o ícone antes de criar a HomeView
+        try:
+            base_path = os.path.abspath(".") if not hasattr(sys, "_MEIPASS") else sys._MEIPASS
+            icon_path = os.path.join(base_path, "assets", "icon.ico")
+            self.master.iconbitmap(icon_path)
+        except Exception as e:
+            logging.warning(f"Erro ao configurar ícone: {e}")
+
+        # Restaura o cursor para o padrão
         self.master.config(cursor="")
 
-        # Destroi a janela atual (login)
-        self.master.destroy()
-
-        # Cria nova janela principal como Toplevel
-        root = tk.Tk()
-        root.title("Controle de Atividades")
-
-        try:
-            root.iconbitmap("assets/icon.ico")
-        except Exception as e:
-            logging.warning(f"Erro ao definir ícone: {e}")
-
-        HomeView(root, colaborador)
-        root.mainloop()
-
+        # Cria apenas UMA instância da HomeView
+        HomeView(self.master, colaborador)

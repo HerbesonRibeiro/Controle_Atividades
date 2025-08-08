@@ -1,6 +1,52 @@
+# from models.usuario import Colaborador
+# from utils.db import Database
+# import bcrypt
+# import logging
+# from utils.exceptions import UsuarioNaoEncontradoError, UsuarioInativoError, SenhaIncorretaError
+#
+# class AuthController:
+#     def autenticar(self, usuario: str, senha: str) -> Colaborador:
+#         cursor = None
+#         conn = None
+#         try:
+#             # 1. Pega conexão e cursor com dicionário para facilitar o acesso
+#             conn = Database().get_connection()
+#             cursor = conn.cursor(dictionary=True)
+#
+#             # 2. Executa a consulta
+#             cursor.execute("""
+#                 SELECT c.*, p.nome AS perfil_nome
+#                 FROM colaboradores c
+#                 JOIN perfis p ON c.perfil_id = p.id
+#                 WHERE c.usuario = %s AND c.status = 'Ativo'
+#             """, (usuario,))
+#
+#             dados = cursor.fetchone()
+#             if not dados:
+#                 raise ValueError("Usuário não encontrado ou inativo")
+#
+#             # 3. Cria objeto Colaborador
+#             colaborador = Colaborador.from_db(dados)
+#
+#             # 4. Verifica senha com bcrypt
+#             if not bcrypt.checkpw(senha.encode(), colaborador.senha_hash.encode()):
+#                 raise ValueError("Senha incorreta")
+#
+#             # 5. Retorna colaborador autenticado
+#             return colaborador
+#
+#         except Exception as e:
+#             logging.error(f"Falha na autenticação: {str(e)}", exc_info=True)
+#             raise ValueError("Falha durante a autenticação") from e
+#
+#         finally:
+#             # Liberar conexão e cursor
+#             Database().release_connection(cursor, conn)
 from models.usuario import Colaborador
 from utils.db import Database
+from utils.exceptions import UsuarioNaoEncontradoError, UsuarioInativoError, SenhaIncorretaError
 import bcrypt
+import logging
 
 
 class AuthController:
@@ -16,34 +62,39 @@ class AuthController:
             Objeto Colaborador autenticado
 
         Raises:
-            ValueError: Se autenticação falhar
+            UsuarioNaoEncontradoError, UsuarioInativoError, SenhaIncorretaError
         """
+        cursor = None
+        conn = None
         try:
-            # 1. Busca usuário no banco
-            db = Database().get_cursor()
-            db.execute("""
+            conn = Database().get_connection()
+            cursor = conn.cursor(dictionary=True)
+
+            cursor.execute("""
                 SELECT c.*, p.nome AS perfil_nome
                 FROM colaboradores c
                 JOIN perfis p ON c.perfil_id = p.id
-                WHERE c.usuario = %s AND c.status = 'Ativo'
+                WHERE c.usuario = %s
             """, (usuario,))
 
-            dados = db.fetchone()
+            dados = cursor.fetchone()
             if not dados:
-                raise ValueError("Usuário não encontrado ou inativo")
+                raise UsuarioNaoEncontradoError("Usuário não encontrado.\nEntre em contato com o Administador.")
 
-            # 2. Cria objeto Colaborador
+            if dados["status"] != "Ativo":
+                raise UsuarioInativoError("Usuário inativo,\nEntre em contato com o Administador.")
+
             colaborador = Colaborador.from_db(dados)
 
-            # 3. Verifica senha com bcrypt
             if not bcrypt.checkpw(senha.encode(), colaborador.senha_hash.encode()):
-                raise ValueError("Senha incorreta")
+                raise SenhaIncorretaError("Senha incorreta.")
 
-            # 4. Retorna usuário autenticado
             return colaborador
 
+        except (UsuarioNaoEncontradoError, UsuarioInativoError, SenhaIncorretaError):
+            raise  # Deixa que o código que chamou lida com isso (como a view)
         except Exception as e:
-            # Log detalhado do erro
-            import logging
-            logging.error(f"Falha na autenticação: {str(e)}", exc_info=True)
-            raise ValueError("Falha durante a autenticação") from e
+            logging.error(f"❌ Falha inesperada na autenticação: {str(e)}", exc_info=True)
+            raise ValueError("Erro interno durante a autenticação.")
+        finally:
+            Database().release_connection(cursor, conn)

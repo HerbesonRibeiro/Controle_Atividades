@@ -3,7 +3,7 @@
   "filename": "C:\\Users\\herbeson.bezerra\\Documents\\PythonProject\\Controle_Atividades\\.pyupdater\\config.pyu",
   "count": 0,
   "app_config": {
-    "APP_NAME": "Controle_atividades",
+    "APP_NAME": "controle-atividades",
     "CLIENT_CONFIG_PATH": [
       "client_config.py"
     ],
@@ -13,8 +13,14 @@
     "MAX_DOWNLOAD_RETRIES": 3,
     "HTTP_TIMEOUT": 30,
     "UPDATE_URLS": [
-      "https://github.com/HerbesonRibeiro/Controle_Atividades/releases"
+      "https://api.github.com/repos/HerbesonRibeiro/Controle_Atividades/releases/"
     ],
     "DATA_DIR": "C:\\Users\\herbeson.bezerra\\Documents\\PythonProject\\Controle_Atividades"
+  },
+  "version_meta": {
+    "updates": {}
+  },
+  "py_repo_config": {
+    "patches": {}
   }
 }
