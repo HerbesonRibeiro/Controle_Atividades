@@ -1,26 +1,33 @@
-# Cache do Python
-__pycache__/
-*.py[cod]
-
 # Ambiente virtual
 .venv/
-.venv310
+venv/
 
-# Arquivos de log
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Config IDE
+.idea/
+.vscode/
+
+# Logs
+logs/
 *.log
 
-# Arquivos da IDE PyCharm
-.idea/
+# Arquivos de ambiente
+.env
 
-# Banco gerado local (se houver)
-*.db
-
-# Dados sensíveis
-*.env
-
-ultimo.usuario.json
-/dist/
-/build/
-/pyu-data/
-github_token.txt
+# Pastas de libs (caso estejam na raiz por engano)
+babel/
+certifi/
+cryptography-*.dist-info/
+installer/
+jaraco/
+mysql/
+tcl/
+tk/
+tcl8/
+.pyupdater/
 main.spec
