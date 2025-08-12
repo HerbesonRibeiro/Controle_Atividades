@@ -1,33 +1,44 @@
-# Ambiente virtual
-.venv/
-venv/
+# Arquivo .gitignore (Versão Revisada e Corrigida)
 
-# Cache Python
+# Ambientes Virtuais
+/.venv
+/.venv310
+/venv/
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
 
-# Config IDE
+# Arquivos de Cache e Compilados do Python
+*.py[cod]
+*$py.class
+
+# Arquivos de Configuração de IDEs e Editores
 .idea/
 .vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# Logs
-logs/
-*.log
+# Arquivos de Teste
+.pytest_cache/
+.coverage
 
-# Arquivos de ambiente
-.env
+# Arquivos de Build (PyInstaller) - O .spec NÃO é ignorado
+/dist/
+/build/
 
-# Pastas de libs (caso estejam na raiz por engano)
-babel/
-certifi/
-cryptography-*.dist-info/
-installer/
-jaraco/
-mysql/
-tcl/
-tk/
-tcl8/
+# Arquivos de Update (PyUpdater)
 .pyupdater/
-main.spec
+
+# Arquivos Gerados Localmente
+*.log
+*.sqlite3
+ultimo_usuario.json
+estrutura_projeto.txt
+
+# Arquivos de Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos Sensíveis (NUNCA DEVEM IR PARA O GITHUB)
+.env

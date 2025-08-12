@@ -1,128 +1,112 @@
-# Revisado integração com o DB
+# Versão FINAL e CORRIGIDA (de verdade)
 import tkinter as tk
 from tkinter import ttk, messagebox
 from tkcalendar import DateEntry
-from datetime import datetime
 from utils.db import Database
 import logging
-from mysql.connector import Error, InterfaceError
+from mysql.connector import Error
 
 
 class EditarAtividadeView:
-    def __init__(self, master, atividade_id, colaborador, on_save):
+    # <<< CORREÇÃO FINAL: Adicionando o parâmetro 'colaborador' que faltava >>>
+    def __init__(self, master, atividade_id, on_save, colaborador=None):
         self.master = master
         self.atividade_id = atividade_id
-        self.colaborador = colaborador
         self.on_save = on_save
+        self.colaborador = colaborador  # Embora não usado aqui, é bom recebê-lo para evitar erros
+        self.db = Database()
         self.tipos_atendimento = {}
 
+        self.master.title("Editar Atividade")
+        self.master.geometry("500x520")
+        self.master.resizable(False, False)
+        self.master.configure(bg="#f8f9fa")
+
         self._configurar_estilos()
-        self._carregar_tipos()
-        self._carregar_dados()
+        self._carregar_dados_iniciais()
         self._setup_ui()
+        self._centralizar_janela()
+
+    def _centralizar_janela(self):
+        self.master.update_idletasks()
+        x = (self.master.winfo_screenwidth() // 2) - (self.master.winfo_width() // 2)
+        y = (self.master.winfo_screenheight() // 2) - (self.master.winfo_height() // 2)
+        self.master.geometry(f'+{x}+{y}')
 
     def _configurar_estilos(self):
         style = ttk.Style()
         style.theme_use("clam")
+        style.configure(".", background="#f8f9fa", font=("Segoe UI", 10))
         style.configure("TFrame", background="#f8f9fa")
-        style.configure("TLabel", background="#f8f9fa", font=("Segoe UI", 10))
-        style.configure("Title.TLabel", background="#f8f9fa", font=("Segoe UI", 14, "bold"))
-        style.configure("TEntry", font=("Segoe UI", 10))
-        style.configure("TCombobox", font=("Segoe UI", 10))
-        style.configure("Primary.TButton", background="#4a6da7", foreground="white",
-                        font=("Segoe UI", 10, "bold"), padding=6)
-        style.map("Primary.TButton", background=[("active", "#3a5a8a")])
+        style.configure("Title.TLabel", background="#f8f9fa", foreground="#343a40", font=("Segoe UI", 16, "bold"))
+        style.configure("TLabel", background="#f8f9fa")
+        style.configure("TEntry", padding=5)
+        style.configure("TCombobox")
+        style.configure("Primary.TButton", background="#007bff", foreground="white", font=("Segoe UI", 10, "bold"),
+                        padding=(12, 8))
+        style.map("Primary.TButton", background=[("active", "#0056b3")])
 
-    def _carregar_tipos(self):
-        """Carrega os tipos de atendimento do banco de dados"""
+    def _carregar_dados_iniciais(self):
         try:
-            with Database().get_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    cursor.execute("SELECT id, nome FROM tipos_atendimento ORDER BY nome")
-                    self.tipos_atendimento = {row["nome"]: row["id"] for row in cursor.fetchall()}
-        except Error as e:
-            logging.error("Erro de banco de dados ao carregar tipos de atendimento", exc_info=True)
-            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
-            self.master.destroy()
-        except Exception as e:
-            logging.error("Erro ao carregar tipos de atendimento", exc_info=True)
-            messagebox.showerror("Erro", "Erro ao carregar os tipos de atendimento.")
-            self.master.destroy()
+            tipos_result = self.db.execute_query("SELECT id, nome FROM tipos_atendimento ORDER BY nome")
+            self.tipos_atendimento = {row["nome"]: row["id"] for row in tipos_result}
 
-    def _carregar_dados(self):
-        """Carrega os dados da atividade específica"""
-        try:
-            with Database().get_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    cursor.execute("SELECT * FROM atividades WHERE id = %s", (self.atividade_id,))
-                    self.dados = cursor.fetchone()
-                    if not self.dados:
-                        raise Exception("Atividade não encontrada")
+            atividade_result = self.db.execute_query("SELECT * FROM atividades WHERE id = %s", (self.atividade_id,))
+            if not atividade_result:
+                raise Exception("Atividade não encontrada")
+            self.dados = atividade_result[0]
+
         except Error as e:
-            logging.error("Erro de banco de dados ao carregar dados da atividade", exc_info=True)
-            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
-            self.master.destroy()
-        except Exception as e:
-            logging.error("Erro ao carregar dados da atividade", exc_info=True)
-            messagebox.showerror("Erro", "Erro ao carregar os dados da atividade.")
+            messagebox.showerror("Erro de Banco de Dados", f"Falha ao carregar dados iniciais:\n{e}",
+                                 parent=self.master)
             self.master.destroy()
 
     def _setup_ui(self):
-        """Configura a interface do usuário"""
-        self.master.geometry("420x420")
-        self.master.configure(bg="#f8f9fa")
+        main_frame = ttk.Frame(self.master, padding=(25, 20))
+        main_frame.pack(fill="both", expand=True)
+        main_frame.columnconfigure(1, weight=1)
 
-        frame = ttk.Frame(self.master, padding=20, style="TFrame")
-        frame.pack(fill="both", expand=True)
+        ttk.Label(main_frame, text="✏️ Editar Atividade", style="Title.TLabel").grid(row=0, column=0, columnspan=2,
+                                                                                     pady=(0, 20), sticky='w')
 
-        ttk.Label(frame, text="Editar Atividade", style="Title.TLabel").grid(
-            row=0, column=0, columnspan=2, pady=(0, 10))
-
-        # Data
-        ttk.Label(frame, text="Data do Atendimento:").grid(row=1, column=0, sticky="w")
-        self.entry_data = DateEntry(frame, date_pattern='dd-mm-yyyy')
+        ttk.Label(main_frame, text="Data do Atendimento:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=5)
+        self.entry_data = DateEntry(main_frame, date_pattern='dd-mm-yyyy', font=("Segoe UI", 10))
         self.entry_data.grid(row=1, column=1, pady=5, sticky='we')
         self.entry_data.set_date(self.dados["data_atendimento"])
 
-        # Tipo
-        ttk.Label(frame, text="Tipo de Atendimento:").grid(row=2, column=0, sticky="w")
+        ttk.Label(main_frame, text="Tipo de Atendimento:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=5)
         self.var_tipo = tk.StringVar()
-        self.combo_tipo = ttk.Combobox(frame, textvariable=self.var_tipo,
-                                       values=list(self.tipos_atendimento.keys()), state="readonly")
+        self.combo_tipo = ttk.Combobox(main_frame, textvariable=self.var_tipo,
+                                       values=list(self.tipos_atendimento.keys()), state="readonly", style="TCombobox")
         self.combo_tipo.grid(row=2, column=1, pady=5, sticky='we')
-        for nome, id_ in self.tipos_atendimento.items():
-            if id_ == self.dados["tipo_atendimento_id"]:
-                self.var_tipo.set(nome)
-                break
+        tipo_nome_atual = next(
+            (nome for nome, id_ in self.tipos_atendimento.items() if id_ == self.dados["tipo_atendimento_id"]), "")
+        self.var_tipo.set(tipo_nome_atual)
 
-        # Nível
-        ttk.Label(frame, text="Nível de Complexidade:").grid(row=3, column=0, sticky="w")
+        ttk.Label(main_frame, text="Nível de Complexidade:").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=5)
         self.var_nivel = tk.StringVar()
-        self.combo_nivel = ttk.Combobox(frame, textvariable=self.var_nivel,
-                                        values=["baixo", "medio", "grave", "gravissimo"], state="readonly")
+        self.combo_nivel = ttk.Combobox(main_frame, textvariable=self.var_nivel,
+                                        values=["baixo", "medio", "grave", "gravissimo"], state="readonly",
+                                        style="TCombobox")
         self.combo_nivel.grid(row=3, column=1, pady=5, sticky='we')
         self.var_nivel.set(self.dados["nivel_complexidade"])
 
-        # Número
-        ttk.Label(frame, text="Número/Ticket:").grid(row=4, column=0, sticky="w")
-        self.entry_ticket = ttk.Entry(frame)
+        ttk.Label(main_frame, text="Número/Ticket:").grid(row=4, column=0, sticky="w", padx=(0, 10), pady=5)
+        self.entry_ticket = ttk.Entry(main_frame, style="TEntry")
         self.entry_ticket.grid(row=4, column=1, pady=5, sticky='we')
         self.entry_ticket.insert(0, self.dados["numero_atendimento"] or "")
 
-        # Descrição
-        ttk.Label(frame, text="Descrição:").grid(row=5, column=0, sticky="nw")
-        self.txt_descricao = tk.Text(frame, height=5, wrap='word')
+        ttk.Label(main_frame, text="Descrição:").grid(row=5, column=0, sticky="nw", padx=(0, 10), pady=5)
+        self.txt_descricao = tk.Text(main_frame, height=6, wrap='word', font=("Segoe UI", 10), relief='solid',
+                                     borderwidth=1, highlightthickness=1, highlightcolor="#ced4da")
         self.txt_descricao.grid(row=5, column=1, pady=5, sticky='we')
         self.txt_descricao.insert("1.0", self.dados["descricao"])
 
-        # Botão salvar
-        ttk.Button(frame, text="Salvar Alterações", command=self._salvar,
-                   style="Primary.TButton").grid(row=6, column=0, columnspan=2, pady=15)
-
-        frame.columnconfigure(1, weight=1)
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.grid(row=6, column=1, pady=(20, 0), sticky='e')
+        ttk.Button(btn_frame, text="Salvar Alterações", command=self._salvar, style="Primary.TButton").pack()
 
     def _salvar(self):
-        """Salva as alterações no banco de dados"""
         try:
             nova_data = self.entry_data.get_date().strftime('%Y-%m-%d')
             tipo_id = self.tipos_atendimento[self.var_tipo.get()]
@@ -130,48 +114,16 @@ class EditarAtividadeView:
             numero = self.entry_ticket.get().strip()
             descricao = self.txt_descricao.get("1.0", tk.END).strip()
 
-            with Database().get_connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        UPDATE atividades
-                        SET data_atendimento = %s,
-                            tipo_atendimento_id = %s,
-                            nivel_complexidade = %s,
-                            numero_atendimento = %s,
-                            descricao = %s
-                        WHERE id = %s
-                    """, (nova_data, tipo_id, nivel, numero or None, descricao, self.atividade_id))
-                    conn.commit()
+            if not all([nova_data, tipo_id, nivel, descricao]):
+                raise ValueError("Todos os campos, exceto Número/Ticket, são obrigatórios.")
 
-            messagebox.showinfo("Sucesso", "Atividade atualizada com sucesso.")
-            if self.on_save:
-                self.on_save()
+            query = "UPDATE atividades SET data_atendimento = %s, tipo_atendimento_id = %s, nivel_complexidade = %s, numero_atendimento = %s, descricao = %s WHERE id = %s"
+            params = (nova_data, tipo_id, nivel, numero or None, descricao, self.atividade_id)
+            self.db.execute_query(query, params, fetch=False)
+            messagebox.showinfo("Sucesso", "Atividade atualizada com sucesso.", parent=self.master)
+            if self.on_save: self.on_save()
             self.master.destroy()
-
+        except ValueError as ve:
+            messagebox.showwarning("Aviso", str(ve), parent=self.master)
         except Error as e:
-            logging.error("Erro de banco de dados ao atualizar atividade", exc_info=True)
-            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
-        except InterfaceError as e:
-            logging.error("Erro de interface ao atualizar atividade", exc_info=True)
-            messagebox.showerror("Erro", "Problema na comunicação com o banco de dados")
-        except Exception as e:
-            logging.error("Erro ao atualizar atividade", exc_info=True)
-            messagebox.showerror("Erro", f"Falha ao salvar alterações:\n{e}")
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    root.title("Editar Atividade - Teste")
-
-
-    class MockColaborador:
-        def __init__(self):
-            self.id = 1
-
-
-    def on_save_test():
-        print("Callback de salvamento executado")
-
-
-    app = EditarAtividadeView(root, atividade_id=1, colaborador=MockColaborador(), on_save=on_save_test)
-    root.mainloop()
+            messagebox.showerror("Erro de Banco de Dados", f"Falha ao salvar alterações:\n{e}", parent=self.master)

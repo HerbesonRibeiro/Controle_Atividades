@@ -1,68 +1,99 @@
-# Revisado conexão com BD
+# Versão com ajuste fino no botão Salvar do pop-up
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from utils.db import Database
+import logging
+from mysql.connector import Error
 
-class CadastroAtividadesView(ttk.Frame):
-    def __init__(self, master: tk.Misc):
-        super().__init__(master)
+
+class CadastroAtividadesView:
+    def __init__(self, master):
+        self.master = master
         self.db = Database()
 
-        self.config(width=360)
-        self.pack(fill="both", expand=True)
-        self.pack_propagate(False)
+        for widget in self.master.winfo_children():
+            widget.destroy()
 
+        self._configurar_estilos()
         self._setup_ui()
         self._carregar_tipos()
 
-    def _setup_ui(self):
+    def _configurar_estilos(self):
         style = ttk.Style()
         style.theme_use("clam")
+        style.configure(".", background="#f8f9fa")
         style.configure("TFrame", background="#f8f9fa")
-        style.configure("Title.TLabel", background="#f4f6f7", foreground="#1f1f1f",
-                        font=("Segoe UI", 16, "bold"))
-        style.configure("TLabel", background="#f8f9fa", font=("Segoe UI", 10))
-        style.configure("TButton", font=("Segoe UI", 10, "bold"))
-        style.configure("Primary.TButton", background="#4a6da7", foreground="white",
-                        font=("Segoe UI", 10, "bold"), padding=6)
-        style.map("Primary.TButton", background=[("active", "#3a5a8a")])
-        style.configure("Treeview", font=("Segoe UI", 10))
-        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        style.configure("Title.TLabel", background="#f8f9fa", foreground="#343a40", font=("Segoe UI", 18, "bold"))
+        style.configure("Treeview", font=("Segoe UI", 10), rowheight=28, fieldbackground="#ffffff")
+        style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), padding=(10, 5), background='#e9ecef',
+                        relief='flat')
+        style.map("Treeview", background=[('selected', '#b8d8ff')])
 
-        frame = ttk.Frame(self, padding=(20, 15), style="TFrame")
+        style.configure("Primary.TButton",
+                        font=("Segoe UI", 10, "bold"),
+                        padding=(12, 8),
+                        background="#007bff",
+                        foreground="white")
+        style.map("Primary.TButton",
+                  background=[("active", "#0056b3")])
+
+        style.configure("Secondary.TButton",
+                        font=("Segoe UI", 10, "bold"),
+                        padding=(12, 8),
+                        background="#6c757d",
+                        foreground="white")
+        style.map("Secondary.TButton",
+                  background=[("active", "#5a6268")])
+
+    def _setup_ui(self):
+        frame = ttk.Frame(self.master, padding=(25, 20))
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text="Cadastro de Tipos de Atividade", style="Title.TLabel")\
-            .pack(anchor="center", pady=(0, 12))
+        ttk.Label(frame, text="📝 Gerenciar Tipos de Atividade", style="Title.TLabel").pack(side='top', anchor='w',
+                                                                                           pady=(0, 20))
 
-        table_box = ttk.Frame(frame, style="TFrame")
-        table_box.pack(fill="x", padx=5, pady=(0, 10))
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(side='top', fill='x', pady=(0, 15))
 
-        self.tree = ttk.Treeview(table_box, columns=("id", "nome"), show="headings", height=8)
-        self.tree.heading("id", text="ID")
-        self.tree.heading("nome", text="NOME")
-        self.tree.column("id", width=40, anchor="center")
-        self.tree.column("nome", width=240, anchor="w")
-        self.tree.pack(fill="x", padx=5, pady=5)
+        btn_novo = ttk.Button(btn_frame, text="Novo Tipo", command=self._abrir_novo_tipo, style="Primary.TButton")
+        btn_novo.pack(side='right')
 
-        btn_frame = ttk.Frame(frame, style="TFrame")
-        btn_frame.pack(pady=8)
+        btn_editar = ttk.Button(btn_frame, text="Editar Tipo", command=self._abrir_editar_tipo,
+                                style="Secondary.TButton")
+        btn_editar.pack(side='right', padx=(0, 10))
 
-        ttk.Button(btn_frame, text="➕ NOVO", command=self._abrir_novo_tipo, style="Primary.TButton")\
-            .pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="✏️ EDITAR", command=self._abrir_editar_tipo, style="TButton")\
-            .pack(side="left", padx=5)
+        tabela_frame = ttk.Frame(frame)
+        tabela_frame.pack(side='top', fill='both', expand=True)
+        tabela_frame.columnconfigure(0, weight=1)
+        tabela_frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tabela_frame, columns=("id", "nome"), show="headings", height=10)
+        self.tree.heading("id", text="ID", anchor='w')
+        self.tree.heading("nome", text="NOME DO TIPO DE ATIVIDADE", anchor='w')
+        self.tree.column("id", width=80, stretch=False, anchor='w')
+        self.tree.column("nome", width=400, stretch=True, anchor='w')
+
+        scrollbar = ttk.Scrollbar(tabela_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+
+        self.tree.grid(row=0, column=0, sticky='nsew')
+        scrollbar.grid(row=0, column=1, sticky='ns')
+
+        self.tree.bind("<Double-1>", lambda event: self._abrir_editar_tipo())
 
     def _carregar_tipos(self):
-        self.tree.delete(*self.tree.get_children())
         try:
-            with self.db.get_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    cursor.execute("SELECT id, nome FROM tipos_atendimento ORDER BY id ASC")
-                    for row in cursor.fetchall():
-                        self.tree.insert("", "end", values=(row["id"], row["nome"].upper()))
-        except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao carregar tipos: {e}")
+            query = "SELECT id, nome FROM tipos_atendimento ORDER BY nome ASC"
+            tipos = self.db.execute_query(query)
+
+            self.tree.delete(*self.tree.get_children())
+            if not tipos: return
+
+            for row in tipos:
+                self.tree.insert("", "end", values=(row["id"], row["nome"].upper()))
+        except Error as e:
+            messagebox.showerror("Erro de Banco de Dados", f"Erro ao carregar tipos de atividade: {e}",
+                                 parent=self.master)
 
     def _abrir_novo_tipo(self):
         self._abrir_janela_tipo()
@@ -70,48 +101,58 @@ class CadastroAtividadesView(ttk.Frame):
     def _abrir_editar_tipo(self):
         selected = self.tree.selection()
         if not selected:
-            messagebox.showwarning("Atenção", "Selecione um tipo para editar.")
+            messagebox.showwarning("Atenção", "Selecione um tipo de atividade para editar.", parent=self.master)
             return
 
-        tipo_id, nome = self.tree.item(selected[0], "values")
+        item = self.tree.item(selected[0])
+        tipo_id, nome = item['values']
         self._abrir_janela_tipo(tipo_id, nome)
 
     def _abrir_janela_tipo(self, tipo_id=None, nome=""):
-        janela = tk.Toplevel(self)
-        janela.title("Tipo de Atividade")
+        janela = tk.Toplevel(self.master)
+        janela.title("Editar Tipo de Atividade" if tipo_id else "Novo Tipo de Atividade")
         janela.configure(bg="#f8f9fa")
-        janela.transient(self.winfo_toplevel())
+        janela.transient(self.master)
         janela.grab_set()
 
-        container = ttk.Frame(janela, padding=15, style="TFrame")
+        janela.update_idletasks()
+        width, height = 400, 180
+        x = (self.master.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.master.winfo_screenheight() // 2) - (height // 2)
+        janela.geometry(f'{width}x{height}+{x}+{y}')
+        janela.resizable(False, False)
+
+        container = ttk.Frame(janela, padding=20)
         container.pack(fill="both", expand=True)
 
-        ttk.Label(container, text="Nome da Atividade:", style="TLabel")\
-            .pack(anchor="w", pady=(0, 5))
+        ttk.Label(container, text="Nome do Tipo de Atividade:").pack(anchor="w", pady=(0, 5))
 
-        entry_nome = ttk.Entry(container, font=("Segoe UI", 10))
-        entry_nome.pack(fill="x", pady=5)
+        entry_nome = ttk.Entry(container, font=("Segoe UI", 10), width=50)
+        entry_nome.pack(fill="x", ipady=5, pady=5)
         entry_nome.insert(0, nome)
         entry_nome.focus()
 
         def salvar():
             novo_nome = entry_nome.get().strip()
             if not novo_nome:
-                messagebox.showwarning("Campo obrigatório", "Informe o nome.")
+                messagebox.showwarning("Campo obrigatório", "Informe o nome.", parent=janela)
                 return
 
             try:
-                with self.db.get_connection() as conn:
-                    with conn.cursor() as cursor:
-                        if tipo_id:
-                            cursor.execute("UPDATE tipos_atendimento SET nome=%s WHERE id=%s", (novo_nome, tipo_id))
-                        else:
-                            cursor.execute("INSERT INTO tipos_atendimento (nome) VALUES (%s)", (novo_nome,))
-                        conn.commit()
+                if tipo_id:
+                    query = "UPDATE tipos_atendimento SET nome=%s WHERE id=%s"
+                    params = (novo_nome, tipo_id)
+                else:
+                    query = "INSERT INTO tipos_atendimento (nome) VALUES (%s)"
+                    params = (novo_nome,)
+
+                self.db.execute_query(query, params, fetch=False)
+
                 self._carregar_tipos()
                 janela.destroy()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao salvar: {e}")
+            except Error as e:
+                messagebox.showerror("Erro de Banco de Dados", f"Erro ao salvar: {e}", parent=janela)
 
-        ttk.Button(container, text="SALVAR", command=salvar, style="Primary.TButton")\
-            .pack(pady=10, ipadx=10)
+        # <<< DETALHE: Ajuste fino no texto e no 'pack' do botão Salvar >>>
+        btn_salvar = ttk.Button(container, text="SALVAR", command=salvar, style="Primary.TButton")
+        btn_salvar.pack(pady=15)  # Removido o ipadx

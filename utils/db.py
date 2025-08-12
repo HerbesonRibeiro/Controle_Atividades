@@ -156,7 +156,7 @@
 # def get_db_connection():
 #     return None
 
-# utils/db.py - VERSÃO FINAL OTIMIZADA
+# utils/db.py - VERSÃO FINAL com Lógica de Retentativa (Resiliente)
 import os
 import sys
 import time
@@ -165,6 +165,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 from mysql.connector import pooling, Error
+from mysql.connector.pooling import PoolError  # <<< MUDANÇA: Importa o tipo de erro específico do pool
+import threading
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -187,68 +189,80 @@ load_dotenv(dotenv_path)
 class Database:
     _instance = None
     _pool = None
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            # <<< OTIMIZAÇÃO: Não inicializa mais nada aqui >>>
         return cls._instance
 
     def _initialize_pool(self):
-        # Este método só será chamado UMA VEZ, na primeira vez que o pool for necessário.
-        if self._pool is not None:
-            return  # Se o pool já existe, não faz nada.
-
-        logger.info("🔧 Primeira chamada ao banco. Criando pool de conexões...")
-
-        RECONNECT_DELAY = int(os.getenv("DB_RECONNECT_DELAY", 5))
-        MAX_RETRIES = int(os.getenv("DB_MAX_RETRIES", 3))
-
-        try:
-            raw_pass = os.getenv("DB_PASS", "").encode()
-            key = os.getenv("KEY", "").encode()
-            fernet = Fernet(key)
-            password = fernet.decrypt(raw_pass).decode()
-        except Exception as e:
-            logger.error("❌ Falha crítica ao descriptografar senha: %s", e)
-            raise ValueError("Erro ao descriptografar a senha do banco de dados.")
-
-        config = {
-            "pool_name": os.getenv("DB_POOL_NAME", "pool_unico"),
-            "pool_size": int(os.getenv("DB_POOL_SIZE", 10)),
-            "pool_reset_session": True,
-            "host": os.getenv("DB_HOST"),
-            "port": int(os.getenv("DB_PORT", 3306)),
-            "user": os.getenv("DB_USER"),
-            "password": password,
-            "database": os.getenv("DB_NAME"),
-            "connection_timeout": 20
-        }
-
-        # Tenta criar o pool com retentativas
-        for attempt in range(MAX_RETRIES):
-            try:
-                self._pool = pooling.MySQLConnectionPool(**config)
-                logger.info("✅ Pool de conexões criado com sucesso!")
+        with self._lock:
+            if self._pool is not None:
                 return
-            except Error as e:
-                logger.warning(f"❌ Erro ao criar o pool (tentativa {attempt + 1}/{MAX_RETRIES}): {e}")
-                time.sleep(RECONNECT_DELAY)
 
-        raise ConnectionError("❌ Não foi possível criar o pool de conexões após múltiplas tentativas.")
+            logger.info("🔧 Primeira chamada ao banco. Criando pool de conexões de forma segura (thread-safe)...")
+
+            # ... (código de descriptografar senha e config) ...
+            try:
+                raw_pass = os.getenv("DB_PASS", "").encode()
+                key = os.getenv("KEY", "").encode()
+                fernet = Fernet(key)
+                password = fernet.decrypt(raw_pass).decode()
+            except Exception as e:
+                logger.error("❌ Falha crítica ao descriptografar senha: %s", e)
+                raise ValueError("Erro ao descriptografar a senha do banco de dados.")
+
+            config = {
+                "pool_name": os.getenv("DB_POOL_NAME", "pool_unico"),
+                "pool_size": int(os.getenv("DB_POOL_SIZE", 10)),
+                "pool_reset_session": True,
+                "host": os.getenv("DB_HOST"),
+                "port": int(os.getenv("DB_PORT", 3306)),
+                "user": os.getenv("DB_USER"),
+                "password": password,
+                "database": os.getenv("DB_NAME"),
+                "connection_timeout": 20
+            }
+
+            MAX_RETRIES = int(os.getenv("DB_MAX_RETRIES", 3))
+            RECONNECT_DELAY = int(os.getenv("DB_RECONNECT_DELAY", 5))
+
+            for attempt in range(MAX_RETRIES):
+                try:
+                    self._pool = pooling.MySQLConnectionPool(**config)
+                    logger.info("✅ Pool de conexões criado com sucesso!")
+                    return
+                except Error as e:
+                    logger.warning(f"❌ Erro ao criar o pool (tentativa {attempt + 1}/{MAX_RETRIES}): {e}")
+                    time.sleep(RECONNECT_DELAY)
+
+            raise ConnectionError("❌ Não foi possível criar o pool de conexões após múltiplas tentativas.")
 
     def get_connection(self):
-        # Garante que o pool seja inicializado antes de pegar uma conexão.
-        self._initialize_pool()
-        try:
-            return self._pool.get_connection()
-        except Error as e:
-            logger.error("❌ Erro ao obter conexão do pool: %s", e)
-            raise
+        if self._pool is None:
+            self._initialize_pool()
+
+        # <<< CORREÇÃO FINAL: Lógica de retentativa para pool esgotado >>>
+        max_retries = 5
+        wait_interval = 0.2  # Espera 200ms entre as tentativas
+
+        for attempt in range(max_retries):
+            try:
+                # Tenta pegar uma conexão do pool
+                return self._pool.get_connection()
+            except PoolError as e:
+                # Se o erro for de pool esgotado, espera e tenta de novo
+                logger.warning(f"Pool esgotado. Tentativa {attempt + 1}/{max_retries}. Aguardando...")
+                if attempt < max_retries - 1:
+                    time.sleep(wait_interval)
+                else:
+                    # Se todas as tentativas falharem, lança o erro
+                    logger.error("Não foi possível obter conexão do pool após múltiplas tentativas.")
+                    raise e
 
     def execute_query(self, query, params=None, fetch=True, lastrowid=False):
         try:
-            # O get_connection() agora cuida da inicialização do pool.
             with self.get_connection() as conn:
                 with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(query, params)

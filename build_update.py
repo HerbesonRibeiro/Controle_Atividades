@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# build_update.py
+# VERSÃO FINAL
 import os
 import shutil
 import subprocess

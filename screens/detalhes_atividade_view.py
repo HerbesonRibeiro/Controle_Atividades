@@ -1,206 +1,140 @@
-
+# Versão FINAL com a correção do geometry specifier
 import tkinter as tk
 from tkinter import ttk, messagebox
 from utils.db import Database
 from datetime import datetime
 import logging
-from mysql.connector import Error, InterfaceError
+from mysql.connector import Error
 
 
 class DetalhesAtividadeView:
     def __init__(self, master, atividade_id):
         self.master = master
-        self.master.title("DETALHES DA ATIVIDADE")
-        self.master.geometry("540x500")
-        self.master.configure(bg='#f0f0f0')  # Cor de fundo mais neutra
-        self.master.resizable(False, False)
-
         self.atividade_id = atividade_id
+        self.db = Database()
         self.dados_para_copiar = ""
 
+        self.master.title(f"Detalhes da Atividade #{self.atividade_id}")
+        self.master.configure(bg='#f0f2f5')
+        self.master.resizable(False, False)
+
+        self.master.withdraw()
+
         self._configurar_estilos()
-        self._carregar_detalhes()
-        self._centralizar_janela()
+        self._carregar_e_construir_ui()
 
     def _centralizar_janela(self):
-        """Centraliza a janela na tela"""
         self.master.update_idletasks()
         width = self.master.winfo_width()
         height = self.master.winfo_height()
         x = (self.master.winfo_screenwidth() // 2) - (width // 2)
         y = (self.master.winfo_screenheight() // 2) - (height // 2)
-        self.master.geometry(f'+{x}+{y}')
+
+        # <<< CORREÇÃO FINAL >>>
+        # Trocando o '+' por 'x' entre a largura e a altura.
+        self.master.geometry(f'{width}x{height}+{x}+{y}')
+
+        self.master.deiconify()
 
     def _configurar_estilos(self):
-        """Configura os estilos visuais dos componentes"""
         style = ttk.Style()
-
-        # Configuração do tema
         style.theme_use('clam')
+        style.configure(".", background="#f0f2f5")
+        style.configure("TFrame", background="#f0f2f5")
+        style.configure("Card.TFrame", background="white", relief='raised', borderwidth=1, bordercolor="#e0e0e0")
+        style.configure("CardTitle.TLabel", background="white", font=("Segoe UI", 14, "bold"), foreground="#343a40")
+        style.configure("Field.TLabel", background="white", font=("Segoe UI", 10), foreground="#6c757d")
+        style.configure("Value.TLabel", background="white", font=("Segoe UI", 10, "bold"), foreground="#212529")
+        style.configure("Descricao.TLabel", background="white", font=("Segoe UI", 10), wraplength=480)
+        style.configure("Primary.TButton", background="#007bff", foreground="white", font=("Segoe UI", 10, "bold"),
+                        padding=(12, 8))
+        style.map("Primary.TButton", background=[("active", "#0056b3")])
+        style.configure("Secondary.TButton", background="#6c757d", foreground="white", font=("Segoe UI", 10, "bold"),
+                        padding=(12, 8))
+        style.map("Secondary.TButton", background=[("active", "#5a6268")])
 
-        # Configurações gerais
-        style.configure('.', background='#f0f0f0')
-
-        # Estilos para labels
-        style.configure('Bold.TLabel',
-                        font=('Segoe UI', 10, 'bold'),
-                        background='#f0f0f0')
-        style.configure('Regular.TLabel',
-                        font=('Segoe UI', 10),
-                        background='#f0f0f0')
-        style.configure('Valor.TLabel',
-                        font=('Segoe UI', 10),
-                        foreground='#0066cc',
-                        background='#f0f0f0')
-
-        # Estilo do LabelFrame
-        style.configure('Detalhes.TLabelframe',
-                        background='#ffffff',
-                        relief='groove',
-                        borderwidth=2)
-        style.configure('Detalhes.TLabelframe.Label',
-                        font=('Segoe UI', 11, 'bold'),
-                        background='#ffffff')
-
-        # Estilos para botões
-        style.configure('Copiar.TButton',
-                        font=('Segoe UI', 10, 'bold'),
-                        background='#17a2b8',
-                        foreground='white',
-                        padding=6)
-        style.map('Copiar.TButton',
-                  background=[('active', '#138496'), ('!disabled', '#17a2b8')])
-
-        style.configure('Fechar.TButton',
-                        font=('Segoe UI', 10, 'bold'),
-                        background='#6c757d',
-                        foreground='white',
-                        padding=6)
-        style.map('Fechar.TButton',
-                  background=[('active', '#5a6268'), ('!disabled', '#6c757d')])
-
-    def _carregar_detalhes(self):
-        """Carrega os detalhes da atividade do banco de dados"""
+    def _carregar_e_construir_ui(self):
         try:
-            with Database().get_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    cursor.execute("""
-                        SELECT 
-                            a.id,
-                            a.data_atendimento,
-                            t.nome AS tipo_atendimento,
-                            a.nivel_complexidade,
-                            a.numero_atendimento,
-                            a.descricao,
-                            c.nome AS colaborador_nome,
-                            s.nome_setor
-                        FROM atividades a
-                        JOIN tipos_atendimento t ON a.tipo_atendimento_id = t.id
-                        JOIN colaboradores c ON a.colaborador_id = c.id
-                        JOIN setores s ON c.setor_id = s.id
-                        WHERE a.id = %s
-                    """, (self.atividade_id,))
-                    dados = cursor.fetchone()
-
-            if not dados:
-                lbl_erro = ttk.Label(self.master,
-                                     text="ATIVIDADE NÃO ENCONTRADA.",
-                                     style='Bold.TLabel')
-                lbl_erro.pack(pady=20)
+            query = """
+                SELECT a.id, a.data_atendimento, t.nome AS tipo_atendimento, a.nivel_complexidade,
+                       a.numero_atendimento, a.descricao, c.nome AS colaborador_nome, s.nome_setor
+                FROM atividades a
+                JOIN tipos_atendimento t ON a.tipo_atendimento_id = t.id
+                JOIN colaboradores c ON a.colaborador_id = c.id
+                JOIN setores s ON c.setor_id = s.id
+                WHERE a.id = %s
+            """
+            resultados = self.db.execute_query(query, (self.atividade_id,))
+            if not resultados:
+                messagebox.showerror("Erro", f"Atividade com ID {self.atividade_id} não encontrada.",
+                                     parent=self.master)
+                self.master.destroy()
                 return
 
-            # Frame principal
-            main_frame = ttk.Frame(self.master, padding=10)
-            main_frame.pack(fill='both', expand=True)
-
-            # Container dos detalhes
-            container = ttk.LabelFrame(main_frame,
-                                       text="INFORMAÇÕES DA ATIVIDADE",
-                                       style='Detalhes.TLabelframe')
-            container.pack(fill='both', expand=True, padx=10, pady=10)
-
-            # Frame interno para os dados
-            data_frame = ttk.Frame(container, padding=15)
-            data_frame.pack(fill='both', expand=True)
-
-            self.dados_para_copiar = ""
-
-            campos_exibicao = [
-                ("id", "ID"),
-                ("colaborador_nome", "COLABORADOR"),
-                ("data_atendimento", "DATA"),
-                ("tipo_atendimento", "TIPO"),
-                ("nivel_complexidade", "COMPLEXIDADE"),
-                ("numero_atendimento", "TICKET"),
-                ("descricao", "DESCRIÇÃO"),
-                ("nome_setor", "SETOR")
-            ]
-
-            for campo, rotulo in campos_exibicao:
-                valor = dados.get(campo, "-")
-                if campo == "data_atendimento" and isinstance(valor, datetime):
-                    valor = valor.strftime('%d/%m/%Y')
-                if isinstance(valor, str):
-                    valor = valor.upper()
-
-                linha = ttk.Frame(data_frame)
-                linha.pack(fill='x', pady=5)
-
-                lbl_rotulo = ttk.Label(linha,
-                                       text=f"{rotulo}:",
-                                       style='Bold.TLabel',
-                                       width=15,
-                                       anchor='e')
-                lbl_rotulo.pack(side='left', padx=5)
-
-                estilo_valor = "Valor.TLabel" if rotulo in ["TICKET", "COMPLEXIDADE"] else "Regular.TLabel"
-                lbl_valor = ttk.Label(linha,
-                                      text=str(valor),
-                                      style=estilo_valor,
-                                      anchor='w')
-                lbl_valor.pack(side='left', fill='x', expand=True)
-
-                self.dados_para_copiar += f"{rotulo}: {valor}\n"
-
-            # Frame dos botões
-            btn_frame = ttk.Frame(main_frame)
-            btn_frame.pack(pady=10)
-
-            btn_copiar = ttk.Button(btn_frame,
-                                    text="COPIAR TUDO",
-                                    command=self._copiar_dados,
-                                    style='Copiar.TButton')
-            btn_copiar.pack(side='left', padx=10)
-
-            btn_fechar = ttk.Button(btn_frame,
-                                    text="FECHAR",
-                                    command=self.master.destroy,
-                                    style='Fechar.TButton')
-            btn_fechar.pack(side='left', padx=10)
+            dados = resultados[0]
+            self._construir_card(dados)
 
         except Error as e:
-            logging.error(f"Erro de banco de dados ao carregar detalhes: {e}", exc_info=True)
-            messagebox.showerror("Erro", "Falha na conexão com o banco de dados")
-        except InterfaceError as e:
-            logging.error(f"Erro de interface ao carregar detalhes: {e}", exc_info=True)
-            messagebox.showerror("Erro", "Problema na comunicação com o banco de dados")
-        except Exception as e:
-            logging.error(f"Erro ao carregar detalhes: {e}", exc_info=True)
-            messagebox.showerror("Erro", f"Falha ao carregar detalhes:\n{e}")
+            messagebox.showerror("Erro de Banco de Dados", f"Falha ao carregar detalhes:\n{e}", parent=self.master)
+            self.master.destroy()
+
+    def _construir_card(self, dados):
+        card_frame = ttk.Frame(self.master, style="Card.TFrame", padding=30)
+        card_frame.pack(padx=10, pady=10, fill='both', expand=True)
+        card_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(card_frame, text=f"DETALHES DA ATIVIDADE #{dados['id']}", style="CardTitle.TLabel").grid(row=0,
+                                                                                                           column=0,
+                                                                                                           columnspan=2,
+                                                                                                           pady=(0, 15),
+                                                                                                           sticky='w')
+        ttk.Separator(card_frame, orient='horizontal').grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, 15))
+
+        campos_exibicao = [
+            ("COLABORADOR:", dados.get('colaborador_nome')),
+            ("DATA:", dados.get('data_atendimento').strftime('%d/%m/%Y') if isinstance(dados.get('data_atendimento'),
+                                                                                       datetime) else "-"),
+            ("SETOR:", dados.get('nome_setor')),
+            ("TIPO:", dados.get('tipo_atendimento')),
+            ("COMPLEXIDADE:", dados.get('nivel_complexidade')),
+            ("TICKET/Nº:", dados.get('numero_atendimento')),
+        ]
+
+        row_idx = 2
+        for rotulo, valor in campos_exibicao:
+            self.dados_para_copiar += f"{rotulo} {str(valor).upper()}\n"
+            ttk.Label(card_frame, text=rotulo, style="Field.TLabel").grid(row=row_idx, column=0, sticky='e',
+                                                                          padx=(0, 10))
+            ttk.Label(card_frame, text=str(valor).upper(), style="Value.TLabel").grid(row=row_idx, column=1, sticky='w')
+            row_idx += 1
+
+        ttk.Separator(card_frame, orient='horizontal').grid(row=row_idx, column=0, columnspan=2, sticky='ew', pady=15)
+        row_idx += 1
+
+        ttk.Label(card_frame, text="DESCRIÇÃO:", style="Field.TLabel").grid(row=row_idx, column=0, columnspan=2,
+                                                                            sticky='w')
+        row_idx += 1
+
+        desc = dados.get('descricao')
+        self.dados_para_copiar += f"\nDESCRIÇÃO:\n{desc}"
+
+        ttk.Label(card_frame, text=desc, style="Descricao.TLabel").grid(row=row_idx, column=0, columnspan=2, sticky='w',
+                                                                        pady=(5, 20))
+        row_idx += 1
+
+        btn_frame = ttk.Frame(card_frame, style="Card.TFrame")
+        btn_frame.grid(row=row_idx, column=1, sticky='e', pady=(10, 0))
+
+        ttk.Button(btn_frame, text="Fechar", command=self.master.destroy, style='Secondary.TButton').pack(side='right')
+        ttk.Button(btn_frame, text="Copiar Detalhes", command=self._copiar_dados, style='Primary.TButton').pack(
+            side='right', padx=(0, 10))
+
+        self._centralizar_janela()
 
     def _copiar_dados(self):
-        """Copia os dados da atividade para a área de transferência"""
         try:
             self.master.clipboard_clear()
             self.master.clipboard_append(self.dados_para_copiar)
-            self.master.update()
-            messagebox.showinfo("Copiado", "Dados da atividade copiados com sucesso!")
+            messagebox.showinfo("Copiado", "Dados da atividade copiados com sucesso!", parent=self.master)
         except Exception as e:
-            logging.error(f"Erro ao copiar dados: {e}", exc_info=True)
-            messagebox.showerror("Erro", f"Não foi possível copiar os dados:\n{e}")
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = DetalhesAtividadeView(root, atividade_id=1)
-    root.mainloop()
+            messagebox.showerror("Erro", f"Não foi possível copiar os dados:\n{e}", parent=self.master)
